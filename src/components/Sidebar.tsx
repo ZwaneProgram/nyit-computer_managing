@@ -1,5 +1,4 @@
 import { Icons, type IconName } from './Icons';
-import { PRODUCTS } from '../data/catalog';
 import type { ViewId } from '../types';
 import type { ApiUser } from '../lib/api';
 
@@ -37,7 +36,6 @@ interface SidebarProps {
 }
 
 export function Sidebar({ active, onNav, user, open = false, onClose }: SidebarProps) {
-  const lowCount = PRODUCTS.filter((p) => p.stock <= p.low).length;
   const displayName = user.full_name || user.username;
   const initials = displayName.trim().slice(0, 2);
   const groups: { key: NavItem['group']; label: string }[] = [
@@ -71,9 +69,6 @@ export function Sidebar({ active, onNav, user, open = false, onClose }: SidebarP
                 >
                   <Ic className="sb-item-icon" />
                   <span>{n.label}</span>
-                  {n.id === 'inventory' && lowCount > 0 && (
-                    <span className="sb-badge">{lowCount}</span>
-                  )}
                 </button>
               );
             })}

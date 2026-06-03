@@ -1,53 +1,67 @@
+import { useEffect, useState } from 'react';
 import { Icons } from '../components/Icons';
 import { Sparkline } from '../components/charts/Sparkline';
 import { AreaChart } from '../components/charts/AreaChart';
 import { Donut } from '../components/charts/Donut';
-import { PRODUCTS, TXNS, productById } from '../data/catalog';
 import { fmtTHB, fmtN } from '../data/format';
-import type { Product, ViewId } from '../types';
+import { fetchStats, type Stats } from '../data/stats';
+import { fetchSales, type Sale } from '../data/sales';
+import type { ViewId } from '../types';
 
 interface ViewProps {
   onNav: (id: ViewId) => void;
 }
 
+const DONUT_COLORS = ['var(--accent)', 'var(--pos)', 'var(--warn)', 'oklch(0.65 0.13 25)', 'var(--ink-3)', 'var(--ink-4)'];
+
+function Thumb({ url }: { url: string | null }) {
+  return (
+    <div className="thumb">
+      {url ? <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+        : <span style={{ fontSize: 7, color: 'var(--ink-4)' }}>ไม่มีรูป</span>}
+    </div>
+  );
+}
+
 export function DashboardView({ onNav }: ViewProps) {
-  const lowStock = PRODUCTS.filter((p) => p.stock <= p.low);
-  const inventoryValue = PRODUCTS.reduce((s, p) => s + p.stock * p.cost, 0);
-  const monthSales = 1248430;
-  const monthProfit = 218940;
-  const orders = 142;
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [recent, setRecent] = useState<Sale[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    Promise.all([fetchStats(), fetchSales()])
+      .then(([s, sales]) => { setStats(s); setRecent(sales.slice(0, 5)); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const today = new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  if (loading || !stats) {
+    return <div className="muted" style={{ padding: 40 }}>กำลังโหลด...</div>;
+  }
+
+  const k = stats.kpis;
   const kpis = [
-    { label: 'ยอดขายเดือนนี้', value: fmtTHB(monthSales), delta: '+12.4%', positive: true, period: 'เทียบกับเดือนก่อน', spark: [40, 42, 48, 46, 52, 58, 57, 63, 68, 72, 80, 76, 84, 92], color: 'var(--accent)' },
-    { label: 'กำไรสุทธิ', value: fmtTHB(monthProfit), delta: '+8.1%', positive: true, period: 'เทียบกับเดือนก่อน', spark: [22, 24, 23, 28, 26, 32, 34, 36, 38, 42, 40, 45, 48, 52], color: 'var(--pos)' },
-    { label: 'มูลค่าคลังสินค้า', value: fmtTHB(inventoryValue), delta: '−2.3%', positive: false, period: 'จากการขายออก', spark: [80, 78, 82, 79, 76, 74, 72, 75, 73, 70, 68, 66, 64, 62], color: 'var(--ink-2)' },
-    { label: 'คำสั่งซื้อ', value: fmtN(orders), unit: 'รายการ', delta: '+18', positive: true, period: 'จาก 7 วันก่อนหน้า', spark: [4, 6, 5, 8, 7, 9, 11, 8, 12, 14, 10, 15, 16, 18], color: 'var(--accent)' },
+    { label: 'ยอดขายเดือนนี้', value: fmtTHB(k.monthSales), delta: k.deltaSales, period: 'เทียบกับเดือนก่อน', spark: stats.salesByMonth.sales, color: 'var(--accent)' },
+    { label: 'กำไรเดือนนี้', value: fmtTHB(k.monthProfit), delta: k.deltaProfit, period: 'เทียบกับเดือนก่อน', spark: stats.salesByMonth.profit, color: 'var(--pos)' },
+    { label: 'มูลค่าคลังสินค้า', value: fmtTHB(k.inventoryValue), delta: null, period: 'ราคาทุน × คงเหลือ', spark: [], color: 'var(--ink-2)' },
+    { label: 'ออเดอร์เดือนนี้', value: fmtN(k.monthOrders), unit: 'รายการ', delta: k.deltaOrders, period: 'เทียบกับเดือนก่อน', spark: stats.salesByMonth.orders, color: 'var(--accent)' },
   ];
 
-  const topSelling = [
-    { p: productById('P-0410')!, sold: 38, revenue: 38 * 5290 },
-    { p: productById('P-0152')!, sold: 22, revenue: 22 * 9450 },
-    { p: productById('P-0511')!, sold: 19, revenue: 19 * 3490 },
-    { p: productById('P-0810')!, sold: 17, revenue: 17 * 5290 },
-    { p: productById('P-0411')!, sold: 14, revenue: 14 * 2490 },
-  ];
-  const maxSold = Math.max(...topSelling.map((t) => t.sold));
-
-  const week = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
-
-  const categoryShare = [
-    { label: 'การ์ดจอ', value: 442000, color: 'var(--accent)', pct: 41 },
-    { label: 'ซีพียู', value: 285000, color: 'var(--pos)', pct: 27 },
-    { label: 'เมนบอร์ด', value: 138000, color: 'var(--warn)', pct: 13 },
-    { label: 'อุปกรณ์อื่น ๆ', value: 198000, color: 'var(--ink-3)', pct: 19 },
-  ];
+  const shareTotal = stats.categoryShare.reduce((s, c) => s + c.value, 0);
+  const donut = stats.categoryShare.slice(0, 6).map((c, i) => ({
+    label: c.label, value: c.value, color: DONUT_COLORS[i % DONUT_COLORS.length],
+    pct: shareTotal ? Math.round((c.value / shareTotal) * 100) : 0,
+  }));
+  const maxSold = Math.max(1, ...stats.topProducts.map((t) => t.qty));
 
   return (
     <div className="grid" style={{ gap: 'var(--gap)' }}>
       <div className="page-head">
         <div>
-          <div className="page-title">สวัสดีตอนเช้า, กรกฎ 👋</div>
-          <div className="muted page-subtitle">ภาพรวมร้าน วันจันทร์ที่ 26 พฤษภาคม 2568</div>
+          <div className="page-title">ภาพรวมร้าน 👋</div>
+          <div className="muted page-subtitle">{today}</div>
         </div>
         <div className="page-head-actions">
           <button className="btn" onClick={() => onNav('analytics')}><Icons.chart /> ดูรายงานเต็ม</button>
@@ -56,15 +70,17 @@ export function DashboardView({ onNav }: ViewProps) {
       </div>
 
       <div className="grid grid-4">
-        {kpis.map((k, i) => (
+        {kpis.map((kpi, i) => (
           <div key={i} className="card kpi">
-            <div className="kpi-label">{k.label}</div>
-            <div className="kpi-value">{k.value}{k.unit && <span className="unit">{k.unit}</span>}</div>
+            <div className="kpi-label">{kpi.label}</div>
+            <div className="kpi-value">{kpi.value}{kpi.unit && <span className="unit">{kpi.unit}</span>}</div>
             <div className="kpi-delta">
-              <span className={k.positive ? 'chip chip-pos' : 'chip chip-neg'}>{k.delta}</span>
-              <span>{k.period}</span>
+              {kpi.delta !== null && (
+                <span className={kpi.delta >= 0 ? 'chip chip-pos' : 'chip chip-neg'}>{kpi.delta >= 0 ? '+' : ''}{kpi.delta}%</span>
+              )}
+              <span>{kpi.period}</span>
             </div>
-            <div className="kpi-spark"><Sparkline data={k.spark} color={k.color} /></div>
+            {kpi.spark.length > 0 && <div className="kpi-spark"><Sparkline data={kpi.spark} color={kpi.color} /></div>}
           </div>
         ))}
       </div>
@@ -73,20 +89,13 @@ export function DashboardView({ onNav }: ViewProps) {
         <div className="card col-8">
           <div className="card-pad">
             <div className="section-h">
-              <div>
-                <h3>ภาพรวมยอดขาย — 7 วันล่าสุด</h3>
-                <div className="muted section-sub">เปรียบเทียบกับสัปดาห์ก่อนหน้า</div>
-              </div>
-              <div className="spacer" />
-              <button className="btn btn-sm btn-ghost">รายวัน</button>
-              <button className="btn btn-sm">รายสัปดาห์</button>
-              <button className="btn btn-sm btn-ghost">รายเดือน</button>
+              <div><h3>ภาพรวมยอดขาย — 7 วันล่าสุด</h3><div className="muted section-sub">เทียบกับสัปดาห์ก่อนหน้า</div></div>
             </div>
             <AreaChart
-              labels={week}
+              labels={stats.salesTrend.labels}
               series={[
-                { name: 'ยอดขาย', color: 'var(--accent)', data: [124000, 168000, 142000, 198000, 215000, 268000, 232000] },
-                { name: 'สัปดาห์ก่อน', color: 'var(--ink-4)', data: [108000, 132000, 158000, 142000, 182000, 215000, 198000], dashed: true },
+                { name: 'สัปดาห์นี้', color: 'var(--accent)', data: stats.salesTrend.thisWeek },
+                { name: 'สัปดาห์ก่อน', color: 'var(--ink-4)', data: stats.salesTrend.lastWeek, dashed: true },
               ]}
               height={220}
             />
@@ -95,25 +104,18 @@ export function DashboardView({ onNav }: ViewProps) {
 
         <div className="card col-4">
           <div className="card-pad">
-            <div className="section-h">
-              <div>
-                <h3>สัดส่วนยอดขายตามหมวด</h3>
-                <div className="muted section-sub">30 วันล่าสุด</div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 0 16px' }}>
-              <Donut data={categoryShare} />
-            </div>
-            <div>
-              {categoryShare.map((d, i) => (
-                <div key={i} className="donut-label" style={{ justifyContent: 'space-between' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span className="sw" style={{ background: d.color }} /> {d.label}
-                  </span>
-                  <span className="num muted">{d.pct}%</span>
-                </div>
-              ))}
-            </div>
+            <div className="section-h"><div><h3>สัดส่วนยอดขายตามหมวด</h3><div className="muted section-sub">จากการขายทั้งหมด</div></div></div>
+            {donut.length ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 0 16px' }}><Donut data={donut} /></div>
+                {donut.map((d, i) => (
+                  <div key={i} className="donut-label" style={{ justifyContent: 'space-between' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="sw" style={{ background: d.color }} /> {d.label}</span>
+                    <span className="num muted">{d.pct}%</span>
+                  </div>
+                ))}
+              </>
+            ) : <div className="muted" style={{ padding: 24, textAlign: 'center' }}>ยังไม่มีข้อมูลการขาย</div>}
           </div>
         </div>
       </div>
@@ -122,55 +124,39 @@ export function DashboardView({ onNav }: ViewProps) {
         <div className="card col-7">
           <div className="card-pad">
             <div className="section-h">
-              <div>
-                <h3>สินค้าขายดี</h3>
-                <div className="muted section-sub">30 วันที่ผ่านมา</div>
-              </div>
+              <div><h3>สินค้าขายดี</h3><div className="muted section-sub">จากการขายทั้งหมด</div></div>
               <div className="spacer" />
               <button className="btn btn-sm btn-ghost" onClick={() => onNav('inventory')}>ดูทั้งหมด <Icons.arrowRight /></button>
             </div>
-            <div>
-              {topSelling.map(({ p, sold, revenue }, i) => (
-                <div key={p.id} className="bar-row top-row">
-                  <div className="muted num" style={{ fontSize: 12 }}>{String(i + 1).padStart(2, '0')}</div>
-                  <div className="bar-label" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                    <div className="name" style={{ fontWeight: 500 }}>{p.name}</div>
-                    <div className="bar-track"><div className="bar-fill" style={{ width: `${(sold / maxSold) * 100}%` }} /></div>
-                  </div>
-                  <div className="num" style={{ textAlign: 'right' }}>{fmtTHB(revenue)}</div>
-                  <div className="num muted" style={{ textAlign: 'right' }}>{sold} ชิ้น</div>
+            {stats.topProducts.length ? stats.topProducts.map((t, i) => (
+              <div key={t.id} className="bar-row top-row">
+                <div className="muted num" style={{ fontSize: 12 }}>{String(i + 1).padStart(2, '0')}</div>
+                <div className="bar-label" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                  <div className="name" style={{ fontWeight: 500 }}>{t.name}</div>
+                  <div className="bar-track"><div className="bar-fill" style={{ width: `${(t.qty / maxSold) * 100}%` }} /></div>
                 </div>
-              ))}
-            </div>
+                <div className="num" style={{ textAlign: 'right' }}>{fmtTHB(t.revenue)}</div>
+                <div className="num muted" style={{ textAlign: 'right' }}>{t.qty} ชิ้น</div>
+              </div>
+            )) : <div className="muted" style={{ padding: 24, textAlign: 'center' }}>ยังไม่มีการขาย</div>}
           </div>
         </div>
 
         <div className="card col-5">
           <div className="card-pad">
-            <div className="section-h">
-              <div><h3>ธุรกรรมล่าสุด</h3></div>
-              <div className="spacer" />
-              <button className="btn btn-sm btn-ghost">ทั้งหมด <Icons.arrowRight /></button>
+            <div className="section-h"><div><h3>ธุรกรรมล่าสุด</h3></div><div className="spacer" />
+              <button className="btn btn-sm btn-ghost" onClick={() => onNav('sales')}>ทั้งหมด <Icons.arrowRight /></button>
             </div>
-            <div>
-              {TXNS.slice(0, 5).map((t) => (
-                <div key={t.id} className="txn">
-                  <div className="txn-ic">{t.type === 'bundle' ? <Icons.layers /> : <Icons.cart />}</div>
-                  <div className="txn-body">
-                    <div className="txn-title">{t.label}</div>
-                    <div className="txn-sub">{t.id} · {t.customer} · {t.ts}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div className="txn-amt">{fmtTHB(t.amount)}</div>
-                    <div style={{ marginTop: 3 }}>
-                      {t.status === 'paid' && <span className="chip chip-pos chip-dot">ชำระแล้ว</span>}
-                      {t.status === 'pending' && <span className="chip chip-warn chip-dot">รอชำระ</span>}
-                      {t.status === 'refunded' && <span className="chip chip-neg chip-dot">คืนเงิน</span>}
-                    </div>
-                  </div>
+            {recent.length ? recent.map((t) => (
+              <div key={t.id} className="txn">
+                <div className="txn-ic">{t.kind === 'bundle' ? <Icons.layers /> : <Icons.cart />}</div>
+                <div className="txn-body">
+                  <div className="txn-title">{t.label}</div>
+                  <div className="txn-sub">#{t.id} · {t.customer_name || 'ลูกค้าทั่วไป'} · {new Date(t.created_at).toLocaleDateString('th-TH')}</div>
                 </div>
-              ))}
-            </div>
+                <div style={{ textAlign: 'right' }}><div className="txn-amt">{fmtTHB(t.total)}</div></div>
+              </div>
+            )) : <div className="muted" style={{ padding: 24, textAlign: 'center' }}>ยังไม่มีธุรกรรม</div>}
           </div>
         </div>
       </div>
@@ -179,39 +165,22 @@ export function DashboardView({ onNav }: ViewProps) {
         <div className="card-pad">
           <div className="section-h">
             <Icons.warning style={{ color: 'var(--warn)' }} />
-            <div>
-              <h3>แจ้งเตือนสินค้าใกล้หมด</h3>
-              <div className="muted section-sub">มี {lowStock.length} รายการที่ควรสั่งเพิ่ม</div>
-            </div>
-            <div className="spacer" />
-            <button className="btn btn-sm">สร้างใบสั่งซื้อ</button>
+            <div><h3>แจ้งเตือนสินค้าใกล้หมด</h3><div className="muted section-sub">มี {stats.lowStock.length} รายการที่ควรสั่งเพิ่ม</div></div>
           </div>
           <div className="table-wrap">
             <table className="tbl">
-              <thead>
-                <tr>
-                  <th>สินค้า</th><th>SKU</th><th style={{ textAlign: 'right' }}>คงเหลือ</th>
-                  <th style={{ textAlign: 'right' }}>จุดสั่งซื้อ</th><th>สถานะ</th><th />
-                </tr>
-              </thead>
+              <thead><tr><th>สินค้า</th><th>SKU</th><th style={{ textAlign: 'right' }}>คงเหลือ</th><th style={{ textAlign: 'right' }}>จุดสั่งซื้อ</th><th>สถานะ</th></tr></thead>
               <tbody>
-                {lowStock.map((p: Product) => (
+                {stats.lowStock.map((p) => (
                   <tr key={p.id}>
-                    <td>
-                      <div className="product-cell">
-                        <div className="thumb">{p.cat.toUpperCase()}</div>
-                        <div><div className="product-cell-name">{p.name}</div><div className="product-cell-meta">{p.brand}</div></div>
-                      </div>
-                    </td>
-                    <td className="mono">{p.sku}</td>
+                    <td><div className="product-cell"><Thumb url={p.image_url} /><div><div className="product-cell-name">{p.name}</div><div className="product-cell-meta">{p.brand || '—'}</div></div></div></td>
+                    <td className="mono">{p.sku || '—'}</td>
                     <td className="num" style={{ textAlign: 'right' }}>{p.stock}</td>
                     <td className="num muted" style={{ textAlign: 'right' }}>{p.low}</td>
-                    <td>{p.stock === 0
-                      ? <span className="chip chip-neg chip-dot">หมดสต๊อก</span>
-                      : <span className="chip chip-warn chip-dot">เหลือน้อย</span>}</td>
-                    <td style={{ textAlign: 'right' }}><button className="btn btn-sm">สั่งเพิ่ม</button></td>
+                    <td>{p.stock === 0 ? <span className="chip chip-neg chip-dot">หมดสต๊อก</span> : <span className="chip chip-warn chip-dot">เหลือน้อย</span>}</td>
                   </tr>
                 ))}
+                {stats.lowStock.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', padding: 30 }} className="muted">ไม่มีสินค้าใกล้หมด 👍</td></tr>}
               </tbody>
             </table>
           </div>

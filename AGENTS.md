@@ -27,10 +27,14 @@ Done so far in Phase 0:
 
 **Sales DONE (2026-06-03):** `routes/sales.ts` — **atomic checkout** (`BEGIN/COMMIT`): item or bundle sale, FIFO-selects in_stock serials `for update`, flips them `sold` + links sale_id, writes `sales`+`sale_items`+`stock_movements`; rolls back with 409 if stock insufficient. `GET /api/sales` history with label + staff. `src/data/sales.ts`; `SalesView` rewritten (item cart w/ qty capped at stock, bundle picker w/ set qty, optional customer, shipping/discount, success screen, history tab). **Payment removed per user** (no method/status UI; `sales.status` left defaulting to 'paid' in DB, unused). Staff = logged-in user (auto). Smoke-tested checkout live (stock deduction, totals, oversell 409).
 
-**Next, in order:**
-1. **Dashboard + Analytics** — replace hard-coded numbers with real SQL aggregations over `sales`/`sale_items`/`stock_movements`/`product_serials`. Build `routes/stats.ts` (e.g. KPIs: month sales/profit/orders, inventory value; sales-over-time; category share; top products; low-stock list) + `src/data/stats.ts`. Wire `DashboardView` + `AnalyticsView`. Charts already exist (SVG). Expect sparse data early — that's fine. Remove the dashboard low-stock "สั่งเพิ่ม"/PO leftovers if any remain.
-2. **Cleanup:** once Dashboard/Analytics are off the mock, **delete `src/data/catalog.ts`** and fix `Sidebar` low-count (still imports mock `PRODUCTS`) to use real data (or drop the badge).
-3. Then Settings (shop info, low-stock thresholds, account management) + polish.
+**ALL DATA WIRING COMPLETE (2026-06-03).** Dashboard + Analytics done (`routes/stats.ts` aggregations + `src/data/stats.ts`); mock deleted; Sidebar low-count badge removed. Every screen is real now.
+
+**Next, in order (polish / remaining features):**
+1. **Settings page** — shop info (name/address/phone/tax id → `shop_settings` table exists), default low-stock threshold, **account management** (list/add/remove users — register endpoint already requires login for non-first accounts; need a list + delete-user endpoint + UI). The sidebar "ตั้งค่าระบบ" button is still a no-op — wire it here.
+2. **Polish/decide later:** live low-stock badge in Sidebar (was removed); CSV export (Inventory + Analytics); receipt print/PDF on a sale; refunds (sales.status has 'refunded'); per-serial cost; date-range filtering on Analytics (currently all-time / fixed windows).
+3. **Deploy to Contabo VPS** when ready (native Postgres + Node/pm2 + Caddy; see hosting decisions). Relative `/api` + `/uploads` paths already work same-origin in prod.
+
+NOTE: user said Inventory may be restructured later (maybe drop tables) — keep that in mind before big dependent work.
 
 To run dev: backend `cd server && npm run dev` (:3000), frontend `npm run dev` (:5173). Empty DB → app shows "create first account".
 
@@ -42,8 +46,9 @@ A **Thai-language stock & sales web app for a computer shop** ("Nyit Computer").
 
 ## Current state (frontend)
 
-- **Complete responsive UI**, 6 screens, but every screen still runs on **MOCK data** in `src/data/catalog.ts` (forms only toast; analytics are hard-coded). Replacing that with the API is the work ahead.
+- **All screens now run on REAL data** via the API (mock `src/data/catalog.ts` deleted 2026-06-03). Data layers: `src/data/{inventory,bundles,sales,stats}.ts` + `src/lib/api.ts`. Inventory/Bundles/Sales/Dashboard/Analytics all wired; auth-gated.
 - Stack: **Vite + React 18 + TypeScript** SPA, plain CSS w/ design tokens. Theming (dark/accent/density) works via `localStorage`. Builds clean (`npm run build`).
+- `src/types.ts` now holds only `ViewId`; domain types live with their data layers.
 
 ### Commands
 ```bash
@@ -137,6 +142,7 @@ server/                    backend (Fastify + Postgres)
 
 ## Progress log (newest first)
 
+- **2026-06-03 (Claude):** **Dashboard + Analytics + final cleanup.** Built `routes/stats.ts` (one `/api/stats` endpoint: month KPIs w/ deltas, all-time totals, 7-day trend vs prev week, 12-month sales/profit/orders, inventory value, in/out movement from serials, category share + units, top products, low-stock, bundle performance). New `src/data/stats.ts`. Rewrote `DashboardView` + `AnalyticsView` to real data (kept SVG charts; removed decorative range/export + PO buttons; real date/greeting). **Deleted mock `src/data/catalog.ts`**, removed Sidebar low-count badge, trimmed `src/types.ts` to just `ViewId`. Smoke-tested `/api/stats` live. tsc+build clean. **Data wiring of all 6 screens is COMPLETE.** Next: Settings page / polish (see CURRENT NEXT STEP).
 - **2026-06-03 (Claude):** **Sales module.** `routes/sales.ts` atomic checkout (FIFO serial→sold, stock_movements, 409 on insufficient stock) + history; `src/data/sales.ts`; rewrote `SalesView` (item cart capped at stock, bundle picker + set qty, optional customer, shipping/discount, success screen, history). **Removed the whole payment section per user.** Staff auto = logged-in user. Smoke-tested live (sold 2 → stock 3→1, totals/profit correct, oversell→409), test data cleaned. tsc+build clean. **Stopped at:** Dashboard/Analytics (see CURRENT NEXT STEP).
 - **2026-06-03 (Claude):** **Bundles module.** Built `routes/bundles.ts` (CRUD; bundle list includes component products w/ derived stock + sold count; registered in index.ts). New `src/data/bundles.ts` (computes list_price/price/profit/min-stock from live components). Rewrote `BundlesView` to real API (list cards w/ edit+delete, create/edit form w/ real product picker + discount slider). Smoke-tested bundle CRUD live (throwaway records). tsc+build clean. Note: user said Inventory may be restructured later ("might drop tables/redo") — fine, it's a base. **Stopped at:** Sales module (see CURRENT NEXT STEP).
 - **2026-06-03 (Claude):** Finished Inventory: **edit product** (AddProductView edit mode + App `editProductId`/`editProduct`, edit button in ProductDetail, serials card hidden when editing) and **categories management** (`CategoriesView` + `categories` nav item, full CRUD). Flexible warranty (presets + custom months). Smoke-tested product PUT/DELETE + category PUT/DELETE live via a minted session (throwaway records only — user data untouched). tsc+build clean. **Stopped at:** Bundles module (needs backend `routes/bundles.ts` first — see CURRENT NEXT STEP).
