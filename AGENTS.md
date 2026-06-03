@@ -48,6 +48,12 @@ To run dev: backend `cd server && npm run dev` (:3000), frontend `npm run dev` (
 
 - **DEV DB = shared VPS Postgres via SSH tunnel.** Local `server/.env` `DATABASE_URL` → `localhost:5433`; user runs `ssh -N -L 5433:localhost:5432 -o ServerAliveInterval=30 root@194.233.88.142` and leaves it open (no tunnel ⇒ login/all data 500). **Image-upload gotcha:** DB is shared but `server/uploads/` is NOT — a file only exists on the machine that uploaded it. **Rule: upload product images on the LIVE site, not locally.** Local dev serves `/uploads/*` with a fallback: if a file isn't local and `UPLOADS_FALLBACK_URL` is set (DEV ONLY — never on the VPS), it 302s to the VPS. So local dev sees real images; locally-uploaded images won't show on the live site until re-uploaded there.
 
+- [ ] **7. (captured by user — CLARIFY intent): "deploy frontend and connect to database."**
+  NOTE: the frontend is *already* deployed (single-port, Fastify serves `dist/`) and *already*
+  connected to the VPS Postgres — so this likely means something else the user has in mind
+  (e.g. a **separate/standalone frontend host**, or moving to a **managed/hosted DB**). Confirm
+  with the user what they intend before acting.
+
 PARKED (later / YAGNI, intentionally not built): customers/CRM · suppliers & purchase orders · multi-branch · barcode/QR scanning.
 
 NOTE: user said the **Inventory part may be restructured later** ("might drop tables / redo") — confirm with them before building anything that deeply depends on the current inventory schema.
