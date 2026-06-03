@@ -235,7 +235,7 @@ export function SalesView({ showToast }: ViewProps) {
               </table>
             </div>
 
-            <div className="pagn table-flush">
+            <div className="pagn">
               <div>แสดง {historyTotal === 0 ? 0 : (hPage - 1) * HISTORY_PER_PAGE + 1}–{Math.min(hPage * HISTORY_PER_PAGE, historyTotal)} จาก {historyTotal} รายการ</div>
               <div className="pagn-pages">
                 <button disabled={hPage <= 1} onClick={() => setHPage((p) => Math.max(1, p - 1))}>‹</button>
@@ -251,12 +251,12 @@ export function SalesView({ showToast }: ViewProps) {
               <div className="field-label" style={{ marginBottom: 8 }}>ประเภทการขาย</div>
               <div className="sale-type">
                 <button type="button" onClick={() => setType('item')} className="product-pick"
-                  style={{ flex: 1, borderColor: type === 'item' ? 'var(--accent)' : 'var(--border)', background: type === 'item' ? 'var(--accent-soft-2)' : 'var(--surface)' }}>
+                  style={{ flex: 1, borderColor: type === 'item' ? 'var(--accent)' : 'var(--border)', background: type === 'item' ? 'var(--accent-soft)' : 'var(--surface)' }}>
                   <div className="sale-type-ic"><Icons.box /></div>
                   <div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>สินค้าเดี่ยว</div><div className="muted" style={{ fontSize: 12 }}>เลือกหลายชิ้นได้</div></div>
                 </button>
                 <button type="button" onClick={() => setType('bundle')} className="product-pick"
-                  style={{ flex: 1, borderColor: type === 'bundle' ? 'var(--accent)' : 'var(--border)', background: type === 'bundle' ? 'var(--accent-soft-2)' : 'var(--surface)' }}>
+                  style={{ flex: 1, borderColor: type === 'bundle' ? 'var(--accent)' : 'var(--border)', background: type === 'bundle' ? 'var(--accent-soft)' : 'var(--surface)' }}>
                   <div className="sale-type-ic"><Icons.layers /></div>
                   <div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>ชุดสินค้า (Bundle)</div><div className="muted" style={{ fontSize: 12 }}>เลือก 1 ชุด</div></div>
                 </button>
