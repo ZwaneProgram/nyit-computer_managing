@@ -96,4 +96,11 @@ export async function authRoutes(app: FastifyInstance) {
     if (!me) return reply.code(401).send({ error: 'unauthorized' });
     return reply.send({ user: me });
   });
+
+  // Lets the login screen know whether the very first account still needs to be
+  // created (empty users table) so it can show the "create first account" form.
+  app.get('/api/auth/needs-setup', async () => {
+    const { rows } = await query<{ n: number }>('select count(*)::int as n from users');
+    return { needsSetup: rows[0].n === 0 };
+  });
 }

@@ -9,8 +9,10 @@ import { AddProductView } from './views/AddProductView';
 import { BundlesView } from './views/BundlesView';
 import { SalesView } from './views/SalesView';
 import { AnalyticsView } from './views/AnalyticsView';
+import { LoginView } from './views/LoginView';
 import { useTheme } from './hooks/useTheme';
 import { useMediaQuery } from './hooks/useMediaQuery';
+import { useAuth } from './auth/AuthContext';
 import type { ViewId } from './types';
 
 export default function App() {
@@ -18,6 +20,7 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { theme, set } = useTheme();
+  const { user, loading, logout } = useAuth();
   const isMobile = useMediaQuery('(max-width: 900px)');
   const toastTimer = useRef<number | undefined>(undefined);
 
@@ -57,11 +60,22 @@ export default function App() {
     }
   };
 
+  // Auth gate: block the app until we know who (if anyone) is logged in.
+  if (loading) {
+    return (
+      <div className="auth">
+        <div className="auth-loading">กำลังโหลด...</div>
+      </div>
+    );
+  }
+  if (!user) return <LoginView />;
+
   return (
     <div className="app">
       <Sidebar
         active={view}
         onNav={navigate}
+        user={user}
         open={isMobile && drawerOpen}
         onClose={() => setDrawerOpen(false)}
       />
@@ -71,6 +85,8 @@ export default function App() {
           crumb={cur.crumb}
           theme={theme}
           onSet={set}
+          user={user}
+          onLogout={logout}
           onMenu={() => setDrawerOpen(true)}
         />
         <main className="content">{renderView()}</main>

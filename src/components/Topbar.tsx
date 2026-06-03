@@ -1,17 +1,20 @@
 import { Icons } from './Icons';
 import { SettingsMenu } from './SettingsMenu';
 import type { ThemeState } from '../hooks/useTheme';
+import type { ApiUser } from '../lib/api';
 
 interface TopbarProps {
   title: string;
   crumb: string;
   theme: ThemeState;
   onSet: <K extends keyof ThemeState>(key: K, value: ThemeState[K]) => void;
+  user: ApiUser;
+  onLogout: () => void;
   /** Opens the mobile sidebar drawer; only shown on small screens. */
   onMenu: () => void;
 }
 
-export function Topbar({ title, crumb, theme, onSet, onMenu }: TopbarProps) {
+export function Topbar({ title, crumb, theme, onSet, user, onLogout, onMenu }: TopbarProps) {
   return (
     <header className="topbar">
       <button className="btn btn-icon btn-ghost topbar-menu" onClick={onMenu} title="เมนู" aria-label="เปิดเมนู">
@@ -43,6 +46,14 @@ export function Topbar({ title, crumb, theme, onSet, onMenu }: TopbarProps) {
         <button className="btn btn-icon btn-ghost notif-btn" title="การแจ้งเตือน" aria-label="การแจ้งเตือน">
           <Icons.bell />
           <span className="notif-dot" />
+        </button>
+        <button
+          className="btn btn-icon btn-ghost"
+          onClick={onLogout}
+          title={`ออกจากระบบ (${user.full_name || user.username})`}
+          aria-label="ออกจากระบบ"
+        >
+          <Icons.logout />
         </button>
       </div>
     </header>

@@ -1,6 +1,7 @@
 import { Icons, type IconName } from './Icons';
 import { PRODUCTS } from '../data/catalog';
 import type { ViewId } from '../types';
+import type { ApiUser } from '../lib/api';
 
 interface NavItem {
   id: ViewId;
@@ -28,13 +29,16 @@ export const NAV: {
 interface SidebarProps {
   active: ViewId;
   onNav: (id: ViewId) => void;
+  user: ApiUser;
   /** Mobile drawer open state. */
   open?: boolean;
   onClose?: () => void;
 }
 
-export function Sidebar({ active, onNav, open = false, onClose }: SidebarProps) {
+export function Sidebar({ active, onNav, user, open = false, onClose }: SidebarProps) {
   const lowCount = PRODUCTS.filter((p) => p.stock <= p.low).length;
+  const displayName = user.full_name || user.username;
+  const initials = displayName.trim().slice(0, 2);
   const groups: { key: NavItem['group']; label: string }[] = [
     { key: 'main', label: 'ภาพรวม' },
     { key: 'sell', label: 'การขาย' },
@@ -82,10 +86,10 @@ export function Sidebar({ active, onNav, open = false, onClose }: SidebarProps) 
         </button>
 
         <div className="sb-user">
-          <div className="sb-avatar">กฎ</div>
+          <div className="sb-avatar">{initials}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500 }}>กรกฎ จันทร์เกษม</div>
-            <div className="muted" style={{ fontSize: 11.5 }}>ผู้จัดการร้าน</div>
+            <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</div>
+            <div className="muted" style={{ fontSize: 11.5 }}>@{user.username}</div>
           </div>
         </div>
       </aside>

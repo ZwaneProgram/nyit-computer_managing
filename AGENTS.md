@@ -9,19 +9,21 @@
 
 ## ⏭️ CURRENT NEXT STEP
 
-**Phase 0 (Foundation) is being built.** Hosting/DB are now decided (Full VPS + native Postgres — see below).
+**Phase 0 (Foundation) nearly done.** Backend + Postgres + login gate all working end-to-end on dev.
 
 Done so far in Phase 0:
-- `server/` backend scaffolded: Fastify API + Postgres (`pg`) + auth (register/login/logout/me, bcrypt + JWT cookie) + products/categories endpoints + `schema.sql` + migrate script.
+- `server/` backend: Fastify API + Postgres (`pg`) + auth (register/login/logout/me/**needs-setup**, bcrypt + JWT cookie) + products/categories endpoints + `schema.sql` + migrate script.
 - Vite dev proxy added (`/api` → `http://localhost:3000`).
+- **Postgres installed (Windows) + migrated** — DB `nyit` live, `server/.env` set. Auth flow verified end-to-end (needs-setup → register first → login → me → 2nd-account-blocked).
+- **Frontend login gate done:** `src/lib/api.ts` (fetch wrapper: `api` for auth, `http` for feature endpoints), `src/auth/AuthContext.tsx` (provider + `useAuth`), `src/views/LoginView.tsx` (Thai login / first-account-setup screen). App is gated in `App.tsx`; Topbar has a logout button; Sidebar shows the logged-in user. First account auto-creates when DB is empty (needs-setup), then auto-logs-in.
 
 **Next, in order:**
-1. **Human installs PostgreSQL** (native, Windows) and creates a DB `nyit`. Then in `server/`: copy `.env.example`→`.env`, set `DATABASE_URL`, run `npm install` then `npm run migrate`, then `npm run dev`. Smoke-test: `POST /api/auth/register` (first account is allowed because the users table is empty), then `POST /api/auth/login`.
-2. **Frontend auth gate** — add `src/lib/api.ts` (fetch wrapper), an auth context + a Thai **login screen**, and gate the app so it requires login. (single role — every account = full access; logged-in users can create more accounts.)
-3. **Wire Inventory** — replace mock `PRODUCTS` in `src/data/catalog.ts` with calls to `/api/products` (keep the `Product` shape in `src/types.ts`). Then AddProduct → `POST /api/products`.
-4. Continue the Roadmap (bundles → sales → analytics → cross-cutting).
+1. **Wire Inventory** — replace mock `PRODUCTS` in `src/data/catalog.ts` with calls to `/api/products` via `http.get/post/put/del` (keep the `Product` shape in `src/types.ts`; note backend product fields are snake_case — map them). Then AddProduct → `POST /api/products`. **NOTE:** backend `category_id` is an int FK to a `categories` table that is currently empty — seed categories (the 8 in `CATEGORIES`) or adjust before wiring.
+2. Continue the Roadmap (bundles → sales → analytics → cross-cutting).
 
-**Do not build features before login + the products data-layer wiring work.**
+**Do not build features before the products data-layer wiring work.**
+
+To run dev: backend `cd server && npm run dev` (:3000), frontend `npm run dev` (:5173). Empty DB → app shows "create first account".
 
 ---
 
@@ -96,7 +98,7 @@ server/                    backend (Fastify + Postgres)
 
 ## Roadmap (one module per session)
 
-- **Phase 0 — Foundation:** backend scaffold ✅ · Postgres install + migrate (human) · frontend login gate · wire products data layer. *(in progress)*
+- **Phase 0 — Foundation:** backend scaffold ✅ · Postgres install + migrate ✅ · frontend login gate ✅ · wire products data layer ⬅️ *next*. *(in progress)*
 - **Phase 1 — Inventory:** product CRUD, categories, serials, image upload (`uploads/`), stock + reorder points, manual adjustments, real low-stock alerts, CSV export.
 - **Phase 2 — Bundles:** CRUD, auto price/cost from components, stock validation.
 - **Phase 3 — Sales/Checkout:** atomic checkout (single + bundle) w/ stock deduction + serial assignment, customer capture, payment/shipping/discount, real history, receipt print/PDF, refunds.
@@ -119,6 +121,7 @@ server/                    backend (Fastify + Postgres)
 
 ## Progress log (newest first)
 
+- **2026-06-03 (Claude):** Human installed Postgres (Windows) + created DB `nyit` + set `server/.env`; migrate ran clean. Added `GET /api/auth/needs-setup`. Built the **frontend login gate**: `src/lib/api.ts` (fetch wrapper, `credentials:'include'`, `api` + `http`), `src/auth/AuthContext.tsx` (`AuthProvider`/`useAuth`), `src/views/LoginView.tsx` (Thai login + first-account-setup). Gated `App.tsx` (loading → login → shell), added logout to Topbar + real user in Sidebar, `lock`/`logout` icons, `.auth` styles. Verified the whole auth flow live (curl) then truncated `users` so first-run UX is clean. Both typechecks pass. **Stopped at:** next code task = wire the products data layer (seed categories first — see CURRENT NEXT STEP).
 - **2026-06-01 (Claude):** Locked hosting/DB decisions (Full VPS on Contabo, native Postgres, no Docker, Fastify, single-role auth w/ multi-account). Scaffolded `server/` (Fastify + pg + auth + products/categories + schema + migrate) and added the Vite `/api` proxy. **Stopped at:** human to install Postgres + run migrate; next code task = frontend login gate, then wire the products data layer.
 - **2026-06-01 (Codex):** Reopened backend decision after learning the owner has a Contabo VPS reached via FileZilla; documented VPS-vs-managed trade-offs; pointed `CLAUDE.md` at this file.
 - **2026-06-01 (Claude):** Built the full UI from the Claude Design handoff (6 responsive screens, theming). Chose Vite/React/TS. Wrote the initial handoff.
