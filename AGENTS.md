@@ -9,32 +9,25 @@
 
 ## ⏭️ CURRENT NEXT STEP
 
-**Phase 0 (Foundation) nearly done.** Backend + Postgres + login gate all working end-to-end on dev.
+**STATUS: all 6 screens are wired to the real Postgres backend and working on dev.** Auth/login gate, Inventory (products + per-unit serials + photos + drafts + categories CRUD + edit), Bundles, Sales (atomic checkout that deducts stock), Dashboard + Analytics (real `/api/stats` aggregations) are all DONE and committed. Mock data deleted. Charts fixed. See the Progress log below for the full blow-by-blow, and LOCKED decisions (esp. #9 inventory model).
 
-Done so far in Phase 0:
-- `server/` backend: Fastify API + Postgres (`pg`) + auth (register/login/logout/me/**needs-setup**, bcrypt + JWT cookie) + products/categories endpoints + `schema.sql` + migrate script.
-- Vite dev proxy added (`/api` → `http://localhost:3000`).
-- **Postgres installed (Windows) + migrated** — DB `nyit` live, `server/.env` set. Auth flow verified end-to-end (needs-setup → register first → login → me → 2nd-account-blocked).
-- **Frontend login gate done:** `src/lib/api.ts` (fetch wrapper: `api` for auth, `http` for feature endpoints), `src/auth/AuthContext.tsx` (provider + `useAuth`), `src/views/LoginView.tsx` (Thai login / first-account-setup screen). App is gated in `App.tsx`; Topbar has a logout button; Sidebar shows the logged-in user. First account auto-creates when DB is empty (needs-setup), then auto-logs-in.
+To run dev: backend `cd server && npm run dev` (:3000), frontend `npm run dev` (:5173). Empty DB → "create first account".
 
-**Inventory BACKEND is done + verified** (2026-06-03): categories CRUD (`/api/categories`), products CRUD with **derived stock** + draft `status` (`/api/products?status=active|draft|all`, `/api/products/:id` returns product+serials), per-unit serials (`POST /api/products/:id/serials`, `DELETE /api/serials/:id`), image upload (`POST /api/upload` → `/uploads/*`, multipart, 4MB, image-only). Vite proxies `/uploads` too. All smoke-tested via curl. See LOCKED decision #9 for the model.
+### 📋 TODO (remaining work — newest priorities first)
 
-**Inventory UI — DONE this pass (2026-06-03):** new `src/data/inventory.ts` (real API data layer + types + normalisers — coerces pg string bigint/numeric to JS numbers; `uploadImage` via FormData). `InventoryView` rewritten: real list, search/category/stock filters, **active vs แบบร่าง tabs** (covers drafts), thumbnail = photo or "ไม่มีรูป", click row → **ProductDetail** (serial units list + add/remove serial, delete product). `AddProductView` rewritten: real `createProduct` (active or `บันทึกแบบร่าง`→draft), serial entry, real photo upload. App passes `showToast` to Inventory. Typechecks + builds clean. The **mock `src/data/catalog.ts` still exists** — used by the not-yet-wired views (Bundles/Sales/Dashboard/Analytics/Sidebar low-count); delete it once the last consumer is migrated.
+- [ ] **1. Settings page** (wire the no-op "ตั้งค่าระบบ" sidebar button):
+  - Shop info — name / address / phone / tax id. Backend table **`shop_settings`** (singleton, id=1) already exists; needs `GET`/`PUT /api/settings` routes + a `SettingsView`.
+  - Default low-stock threshold (`shop_settings.default_low`) — use as the default `low` when adding products.
+  - **Account management** — list users, add user, remove user. `register` already requires login for non-first accounts; still need `GET /api/users` + `DELETE /api/users/:id` (guard: don't let a user delete themselves / the last account) + UI. (Single-role; every account = full access.)
+  - Add a `settings` ViewId + nav wiring (mirror how `categories` was added).
+- [ ] **2. Optional polish:**
+  - Live **low-stock badge** in the Sidebar (it was removed when the mock was deleted — refetch a count, e.g. from `/api/stats` `lowStock.length`, or a tiny dedicated count endpoint).
+  - **CSV export** (Inventory list + Analytics).
+  - **Receipt print/PDF** on a completed sale (success screen has a spot for it).
+  - **Refunds** (`sales.status` already supports `'refunded'`; would need to restore serials to `in_stock` + reverse stock_movements).
+- [ ] **3. Deploy to the Contabo VPS** when ready — native Postgres + Node under **pm2** + **Caddy** (auto HTTPS, static serving, `/api` + `/uploads` proxy). Relative paths already work same-origin in prod. (We have SSH: IP + user + password.)
 
-**Inventory is now FEATURE-COMPLETE** (2026-06-03): list, filters, active/draft tabs, product detail + per-unit serials, add, **edit** (AddProductView edit mode via `editId` prop; App holds `editProductId`, `editProduct()` opens it; serials card hidden in edit — serials managed in detail), **delete**, **categories management** (`CategoriesView`, new nav item `categories`/`หมวดหมู่`, CRUD), flexible warranty (presets + custom). All endpoints smoke-tested live. (Optional later: CSV export — was removed from toolbar.)
-
-**Bundles DONE (2026-06-03):** `routes/bundles.ts` (CRUD; list returns each bundle's component products + derived stock + `sold` count; price/cost/profit computed client-side from live components in `src/data/bundles.ts`). `BundlesView` rewritten off mock: list cards (edit/delete), create/edit form (real product picker + discount slider + auto summary). Selling a bundle waits for the Sales module. Smoke-tested CRUD live.
-
-**Sales DONE (2026-06-03):** `routes/sales.ts` — **atomic checkout** (`BEGIN/COMMIT`): item or bundle sale, FIFO-selects in_stock serials `for update`, flips them `sold` + links sale_id, writes `sales`+`sale_items`+`stock_movements`; rolls back with 409 if stock insufficient. `GET /api/sales` history with label + staff. `src/data/sales.ts`; `SalesView` rewritten (item cart w/ qty capped at stock, bundle picker w/ set qty, optional customer, shipping/discount, success screen, history tab). **Payment removed per user** (no method/status UI; `sales.status` left defaulting to 'paid' in DB, unused). Staff = logged-in user (auto). Smoke-tested checkout live (stock deduction, totals, oversell 409).
-
-**ALL DATA WIRING COMPLETE (2026-06-03).** Dashboard + Analytics done (`routes/stats.ts` aggregations + `src/data/stats.ts`); mock deleted; Sidebar low-count badge removed. Every screen is real now.
-
-**Next, in order (polish / remaining features):**
-1. **Settings page** — shop info (name/address/phone/tax id → `shop_settings` table exists), default low-stock threshold, **account management** (list/add/remove users — register endpoint already requires login for non-first accounts; need a list + delete-user endpoint + UI). The sidebar "ตั้งค่าระบบ" button is still a no-op — wire it here.
-2. **Polish/decide later:** live low-stock badge in Sidebar (was removed); CSV export (Inventory + Analytics); receipt print/PDF on a sale; refunds (sales.status has 'refunded'); per-serial cost; date-range filtering on Analytics (currently all-time / fixed windows).
-3. **Deploy to Contabo VPS** when ready (native Postgres + Node/pm2 + Caddy; see hosting decisions). Relative `/api` + `/uploads` paths already work same-origin in prod.
-
-NOTE: user said Inventory may be restructured later (maybe drop tables) — keep that in mind before big dependent work.
+NOTE: user said the **Inventory part may be restructured later** ("might drop tables / redo") — confirm with them before building anything that deeply depends on the current inventory schema.
 
 To run dev: backend `cd server && npm run dev` (:3000), frontend `npm run dev` (:5173). Empty DB → app shows "create first account".
 
