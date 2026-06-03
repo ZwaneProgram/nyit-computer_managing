@@ -25,7 +25,19 @@ To run dev: backend `cd server && npm run dev` (:3000), frontend `npm run dev` (
   - **CSV export** (Inventory list + Analytics).
   - **Receipt print/PDF** on a completed sale (success screen has a spot for it).
   - **Refunds** (`sales.status` already supports `'refunded'`; would need to restore serials to `in_stock` + reverse stock_movements).
-- [ ] **3. Deploy to the Contabo VPS** when ready — native Postgres + Node under **pm2** + **Caddy** (auto HTTPS, static serving, `/api` + `/uploads` proxy). Relative paths already work same-origin in prod. (We have SSH: IP + user + password.)
+- [ ] **3. Deploy to the Contabo VPS** when ready — native Postgres + Node under **pm2** + **Caddy** (auto HTTPS, static serving, `/api` + `/uploads` proxy). Relative paths already work same-origin in prod. (We have SSH: IP + user + password.) Deploy-time must-dos:
+  - [ ] Generate **fresh production secrets** in `server/.env` (don't reuse dev `JWT_SECRET` / `COOKIE_SECRET`).
+  - [ ] Set the session cookie **`secure: true`** when on HTTPS (currently `httpOnly` + `sameSite:'lax'` in `server/src/auth.ts`).
+  - [ ] **Database backups** — a `pg_dump` cron on the VPS (this is the shop's real data).
+  - [ ] Point a **domain** at the VPS.
+- [ ] **4. App loose ends (small):**
+  - [ ] Topbar **notification bell** (🔔 + red dot in `Topbar.tsx`) is decorative/unwired — hook to low-stock alerts or remove.
+  - [ ] **Analytics date-range filter** — the 7d/30d/90d/1y selector was removed; analytics is currently all-time / fixed windows. `/api/stats` would need range params.
+  - [ ] **Manual stock adjustments / returns (RMA)** — serial status `'returned'` exists in DB but no UI flow (mark a unit damaged/lost/returned outside a sale).
+  - [ ] **Per-serial cost** — cost is currently per product, not per unit (matters if same model is bought at different prices).
+  - [ ] **Sales history** has no pagination / date filter (fine until volume grows).
+
+PARKED (later / YAGNI, intentionally not built): customers/CRM · suppliers & purchase orders · multi-branch · barcode/QR scanning.
 
 NOTE: user said the **Inventory part may be restructured later** ("might drop tables / redo") — confirm with them before building anything that deeply depends on the current inventory schema.
 
