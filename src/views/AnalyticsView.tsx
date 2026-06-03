@@ -3,24 +3,35 @@ import { BarChart } from '../components/charts/BarChart';
 import { Donut } from '../components/charts/Donut';
 import { AreaChart } from '../components/charts/AreaChart';
 import { fmtTHB } from '../data/format';
-import { fetchStats, type Stats } from '../data/stats';
+import { fetchStats, type Stats, type StatsRange } from '../data/stats';
 
 type Tab = 'sales' | 'profit' | 'inventory' | 'bundle';
 
 const DONUT_COLORS = ['var(--accent)', 'var(--pos)', 'var(--warn)', 'oklch(0.65 0.13 25)', 'var(--ink-3)', 'var(--ink-4)'];
 
+const RANGES: { id: StatsRange; label: string }[] = [
+  { id: '7d', label: '7 วัน' },
+  { id: '30d', label: '30 วัน' },
+  { id: '90d', label: '90 วัน' },
+  { id: '1y', label: '1 ปี' },
+  { id: 'all', label: 'ทั้งหมด' },
+];
+
 export function AnalyticsView() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('sales');
+  const [range, setRange] = useState<StatsRange>('all');
 
   useEffect(() => {
-    fetchStats().then(setStats).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    fetchStats(range).then(setStats).catch(() => {}).finally(() => setLoading(false));
+  }, [range]);
 
   if (loading || !stats) return <div className="muted" style={{ padding: 40 }}>กำลังโหลด...</div>;
 
   const t = stats.totals;
+  const rangeLabel = RANGES.find((r) => r.id === stats.range)?.label ?? 'ทั้งหมด';
   const headline = [
     { label: 'ยอดขายรวม', value: fmtTHB(t.sales), hint: 'ทั้งหมด' },
     { label: 'กำไรสุทธิ', value: fmtTHB(t.profit), hint: t.sales ? `อัตรากำไร ${Math.round((t.profit / t.sales) * 100)}%` : '—' },
@@ -55,6 +66,13 @@ export function AnalyticsView() {
           <div className="page-title">วิเคราะห์และรายงาน</div>
           <div className="muted page-subtitle">ภาพรวมยอดขาย กำไร และการเคลื่อนไหวของสินค้า</div>
         </div>
+        <div className="quick-filters">
+          {RANGES.map((r) => (
+            <button key={r.id} className={'quick-chip' + (range === r.id ? ' chip-accent' : '')} onClick={() => setRange(r.id)}>
+              {r.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-4">
@@ -75,7 +93,7 @@ export function AnalyticsView() {
         <div className="grid grid-12">
           <div className="card col-8">
             <div className="card-pad">
-              <div className="section-h"><div><h3>ยอดขายรายเดือน</h3><div className="muted section-sub">12 เดือนล่าสุด</div></div></div>
+              <div className="section-h"><div><h3>ยอดขายรายเดือน</h3><div className="muted section-sub">ช่วง: {rangeLabel}</div></div></div>
               <BarChart labels={m.labels} height={260} legend series={[
                 { name: 'ยอดขาย', color: 'var(--accent)', data: m.sales },
                 { name: 'กำไร', color: 'var(--pos)', data: m.profit },
@@ -139,7 +157,7 @@ export function AnalyticsView() {
 
       {tab === 'profit' && (
         <div className="card card-pad">
-          <div className="section-h"><div><h3>เส้นกราฟกำไรสุทธิ vs ยอดขาย</h3><div className="muted section-sub">12 เดือนล่าสุด</div></div></div>
+          <div className="section-h"><div><h3>เส้นกราฟกำไรสุทธิ vs ยอดขาย</h3><div className="muted section-sub">ช่วง: {rangeLabel}</div></div></div>
           <AreaChart labels={m.labels} height={300} series={[
             { name: 'ยอดขาย', color: 'var(--accent)', data: m.sales },
             { name: 'กำไร', color: 'var(--pos)', data: m.profit },

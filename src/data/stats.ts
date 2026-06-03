@@ -1,7 +1,10 @@
 // Stats data layer — real aggregations for Dashboard + Analytics.
 import { http } from '../lib/api';
 
+export type StatsRange = '7d' | '30d' | '90d' | '1y' | 'all';
+
 export interface Stats {
+  range: StatsRange;
   kpis: {
     monthSales: number; monthProfit: number; monthOrders: number; inventoryValue: number;
     deltaSales: number; deltaProfit: number; deltaOrders: number;
@@ -17,6 +20,6 @@ export interface Stats {
   bundlePerformance: { id: number; name: string; item_count: number; sold: number; revenue: number; profit: number; margin: number }[];
 }
 
-export async function fetchStats(): Promise<Stats> {
-  return http.get<Stats>('/api/stats');
+export async function fetchStats(range: StatsRange = 'all'): Promise<Stats> {
+  return http.get<Stats>(`/api/stats?range=${range}`);
 }
