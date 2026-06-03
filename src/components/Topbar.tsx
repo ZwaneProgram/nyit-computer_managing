@@ -26,14 +26,6 @@ export function Topbar({ title, crumb, theme, onSet, user, onLogout, onMenu }: T
       </div>
       <div className="topbar-spacer" />
       <div className="topbar-actions">
-        <div className="search topbar-search">
-          <Icons.search />
-          <input placeholder="ค้นหาทั่วทั้งระบบ..." aria-label="ค้นหา" />
-          <kbd>⌘K</kbd>
-        </div>
-        <button className="btn btn-icon btn-ghost topbar-search-btn" title="ค้นหา" aria-label="ค้นหา">
-          <Icons.search />
-        </button>
         <button
           className="btn btn-icon btn-ghost"
           onClick={() => onSet('dark', !theme.dark)}
