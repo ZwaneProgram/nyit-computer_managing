@@ -45,15 +45,26 @@ SQL
 ```
 
 ### 4. Get the code
-The repo is on GitHub: `https://github.com/ZwaneProgram/nyit-computer_managing`
+The repo is on GitHub and is **private**, so cloning needs a token.
+
+**Option A — clone with a Personal Access Token (recommended):**
+1. On GitHub (your PC): **Settings → Developer settings → Personal access tokens
+   → Tokens (classic) → Generate new token**, tick the **`repo`** scope, copy it.
+2. On the VPS (paste the token in place of `YOUR_TOKEN`):
+```bash
+mkdir -p /opt && cd /opt
+git clone https://YOUR_TOKEN@github.com/ZwaneProgram/nyit-computer_managing.git nyit-app
+cd nyit-app
+```
+> Using the token in the URL means `git pull` later just works with no prompts.
+
+**Option B — make the repo public** (simpler, but the source becomes visible to
+anyone; no secrets are in the repo since `.env` is gitignored). Then:
 ```bash
 mkdir -p /opt && cd /opt
 git clone https://github.com/ZwaneProgram/nyit-computer_managing.git nyit-app
 cd nyit-app
 ```
-> If the repo is **private**, git will ask for a username + password — use your
-> GitHub username and a **Personal Access Token** (not your account password).
-> Or make the repo public for now.
 
 ### 5. Configure the backend `.env` (prod secrets)
 Generate two long random secrets and write the env file:
