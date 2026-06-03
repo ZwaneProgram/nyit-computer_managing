@@ -408,6 +408,7 @@ input, select, textarea { font-family: inherit; }
   border-radius: var(--r-md);
   border: 1px solid var(--border);
   background: var(--surface);
+  color: var(--ink);
   width: 100%; text-align: left;
 }
 .product-pick:hover { background: var(--surface-sunk); }
