@@ -42,7 +42,14 @@ export function SalesView({ showToast }: ViewProps) {
   const [confirmed, setConfirmed] = useState<Sale | null>(null);
 
   const [history, setHistory] = useState<Sale[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [hq, setHq] = useState('');           // search box (debounced into hqDebounced)
+  const [hqDebounced, setHqDebounced] = useState('');
+  const [hFrom, setHFrom] = useState('');
+  const [hTo, setHTo] = useState('');
+  const [hPage, setHPage] = useState(1);
+  const HISTORY_PER_PAGE = 25;
 
   const loadProducts = useCallback(() => {
     fetchProducts('active').then(setProducts).catch(() => {});
@@ -50,10 +57,28 @@ export function SalesView({ showToast }: ViewProps) {
   }, []);
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
+  // Debounce the search box (300ms).
+  useEffect(() => {
+    const id = window.setTimeout(() => setHqDebounced(hq), 300);
+    return () => window.clearTimeout(id);
+  }, [hq]);
+
+  // Reset to page 1 whenever a filter changes.
+  useEffect(() => { setHPage(1); }, [hqDebounced, hFrom, hTo]);
+
   const loadHistory = useCallback(() => {
     setHistoryLoading(true);
-    fetchSales().then(setHistory).catch(() => {}).finally(() => setHistoryLoading(false));
-  }, []);
+    fetchSales({
+      q: hqDebounced || undefined,
+      from: hFrom || undefined,
+      to: hTo || undefined,
+      limit: HISTORY_PER_PAGE,
+      offset: (hPage - 1) * HISTORY_PER_PAGE,
+    })
+      .then((r) => { setHistory(r.sales); setHistoryTotal(r.total); })
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
+  }, [hqDebounced, hFrom, hTo, hPage]);
   useEffect(() => { if (mode === 'history') loadHistory(); }, [mode, loadHistory]);
 
   const productById = useMemo(() => {
@@ -161,38 +186,62 @@ export function SalesView({ showToast }: ViewProps) {
       </div>
 
       {mode === 'history' ? (
-        <div className="card">
-          <div className="table-wrap">
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>เลขที่บิล</th><th>วันที่</th><th>รายการ</th><th>ลูกค้า</th><th>พนักงาน</th>
-                  <th style={{ textAlign: 'right' }}>ยอดรวม</th><th style={{ textAlign: 'right' }}>กำไร</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((t) => (
-                  <tr key={t.id}>
-                    <td className="mono" style={{ fontSize: 12 }}>#{t.id}</td>
-                    <td><span className="muted" style={{ fontSize: 12.5 }}>{new Date(t.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}</span></td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {t.kind === 'bundle' ? <span className="chip chip-accent">ชุด</span> : <span className="chip">ชิ้น</span>}
-                        <span>{t.label}</span>
-                      </div>
-                    </td>
-                    <td>{t.customer_name || '—'}</td>
-                    <td><span className="muted">{t.staff_name || t.staff_username || '—'}</span></td>
-                    <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(t.total)}</td>
-                    <td className="num" style={{ textAlign: 'right', color: 'var(--pos)' }}>+{fmtTHB(t.profit)}</td>
+        <div className="grid" style={{ gap: 'var(--gap)' }}>
+          <div className="card card-pad" style={{ paddingBottom: 16 }}>
+            <div className="filterbar" style={{ flexWrap: 'wrap', gap: 10 }}>
+              <div className="search grow">
+                <Icons.search />
+                <input placeholder="ค้นหาเลขบิล, ลูกค้า, หรือสินค้า..." value={hq} onChange={(e) => setHq(e.target.value)} />
+              </div>
+              <input className="input" type="date" value={hFrom} onChange={(e) => setHFrom(e.target.value)} style={{ width: 'auto' }} title="ตั้งแต่วันที่" />
+              <input className="input" type="date" value={hTo} onChange={(e) => setHTo(e.target.value)} style={{ width: 'auto' }} title="ถึงวันที่" />
+              {(hq || hFrom || hTo) && (
+                <button className="btn btn-sm btn-ghost" onClick={() => { setHq(''); setHFrom(''); setHTo(''); }}>ล้างตัวกรอง</button>
+              )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="table-wrap">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>เลขที่บิล</th><th>วันที่</th><th>รายการ</th><th>ลูกค้า</th><th>พนักงาน</th>
+                    <th style={{ textAlign: 'right' }}>ยอดรวม</th><th style={{ textAlign: 'right' }}>กำไร</th>
                   </tr>
-                ))}
-                {!historyLoading && history.length === 0 && (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">ยังไม่มีประวัติการขาย</td></tr>
-                )}
-                {historyLoading && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">กำลังโหลด...</td></tr>}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {history.map((t) => (
+                    <tr key={t.id}>
+                      <td className="mono" style={{ fontSize: 12 }}>#{t.id}</td>
+                      <td><span className="muted" style={{ fontSize: 12.5 }}>{new Date(t.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}</span></td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {t.kind === 'bundle' ? <span className="chip chip-accent">ชุด</span> : <span className="chip">ชิ้น</span>}
+                          <span>{t.label}</span>
+                        </div>
+                      </td>
+                      <td>{t.customer_name || '—'}</td>
+                      <td><span className="muted">{t.staff_name || t.staff_username || '—'}</span></td>
+                      <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(t.total)}</td>
+                      <td className="num" style={{ textAlign: 'right', color: 'var(--pos)' }}>+{fmtTHB(t.profit)}</td>
+                    </tr>
+                  ))}
+                  {!historyLoading && history.length === 0 && (
+                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">ไม่พบประวัติการขาย</td></tr>
+                  )}
+                  {historyLoading && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">กำลังโหลด...</td></tr>}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="pagn table-flush">
+              <div>แสดง {historyTotal === 0 ? 0 : (hPage - 1) * HISTORY_PER_PAGE + 1}–{Math.min(hPage * HISTORY_PER_PAGE, historyTotal)} จาก {historyTotal} รายการ</div>
+              <div className="pagn-pages">
+                <button disabled={hPage <= 1} onClick={() => setHPage((p) => Math.max(1, p - 1))}>‹</button>
+                <button disabled={hPage * HISTORY_PER_PAGE >= historyTotal} onClick={() => setHPage((p) => p + 1)}>›</button>
+              </div>
+            </div>
           </div>
         </div>
       ) : (
