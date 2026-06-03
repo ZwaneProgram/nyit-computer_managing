@@ -21,6 +21,7 @@ export const NAV: {
   { id: 'dashboard', label: 'แดชบอร์ด', icon: 'dashboard', group: 'main', titleTH: 'แดชบอร์ด', crumb: 'หน้าหลัก / แดชบอร์ด' },
   { id: 'inventory', label: 'คลังสินค้า', icon: 'box', group: 'main', titleTH: 'คลังสินค้า', crumb: 'สินค้า / คลังสินค้า' },
   { id: 'add-product', label: 'เพิ่มสินค้า', icon: 'plus', group: 'main', titleTH: 'เพิ่มสินค้า', crumb: 'สินค้า / เพิ่มใหม่' },
+  { id: 'categories', label: 'หมวดหมู่', icon: 'tag', group: 'main', titleTH: 'จัดการหมวดหมู่', crumb: 'สินค้า / หมวดหมู่' },
   { id: 'bundles', label: 'ชุดสินค้า', icon: 'layers', group: 'main', titleTH: 'ชุดสินค้า (Bundles)', crumb: 'สินค้า / ชุดสินค้า' },
   { id: 'sales', label: 'ขายสินค้า', icon: 'cart', group: 'sell', titleTH: 'ระบบขาย', crumb: 'การขาย / ขายสินค้า' },
   { id: 'analytics', label: 'วิเคราะห์', icon: 'chart', group: 'sell', titleTH: 'วิเคราะห์และรายงาน', crumb: 'รายงาน / วิเคราะห์' },

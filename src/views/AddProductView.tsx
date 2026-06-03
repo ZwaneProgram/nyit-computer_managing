@@ -4,6 +4,8 @@ import { fmtTHB } from '../data/format';
 import {
   createProduct,
   fetchCategories,
+  fetchProduct,
+  updateProduct,
   uploadImage,
   type Category,
   type ProductInput,
@@ -15,7 +17,11 @@ import type { ViewId } from '../types';
 interface ViewProps {
   onNav: (id: ViewId) => void;
   showToast: (msg: string) => void;
+  /** When set, the form edits this product instead of creating a new one. */
+  editId?: number | null;
 }
+
+const isPresetWarranty = (m: string) => WARRANTY_PRESETS.some((p) => p.v === m);
 
 const WARRANTY_PRESETS = [
   { v: '0', label: 'ไม่มี' },
@@ -27,7 +33,8 @@ const WARRANTY_PRESETS = [
   { v: '60', label: '60 เดือน (5 ปี)' },
 ];
 
-export function AddProductView({ onNav, showToast }: ViewProps) {
+export function AddProductView({ onNav, showToast, editId }: ViewProps) {
+  const isEdit = editId != null;
   const [cats, setCats] = useState<Category[]>([]);
   const [form, setForm] = useState({
     category_id: '' as number | '',
@@ -47,10 +54,34 @@ export function AddProductView({ onNav, showToast }: ViewProps) {
     fetchCategories()
       .then((c) => {
         setCats(c);
-        setForm((f) => (f.category_id === '' && c[0] ? { ...f, category_id: c[0].id } : f));
+        // Only auto-pick the first category when creating (edit fills its own).
+        if (!isEdit) setForm((f) => (f.category_id === '' && c[0] ? { ...f, category_id: c[0].id } : f));
       })
       .catch(() => setError('โหลดหมวดหมู่ไม่สำเร็จ'));
-  }, []);
+  }, [isEdit]);
+
+  // Edit mode: load the product and prefill the form.
+  useEffect(() => {
+    if (editId == null) return;
+    fetchProduct(editId)
+      .then(({ product }) => {
+        setForm({
+          category_id: product.category_id ?? '',
+          name: product.name,
+          sku: product.sku ?? '',
+          brand: product.brand ?? '',
+          model: product.model ?? '',
+          cost: product.cost ? String(product.cost) : '',
+          price: product.price ? String(product.price) : '',
+          low: String(product.low),
+          warranty: String(product.warranty_months),
+          notes: product.notes ?? '',
+        });
+        setImageUrl(product.image_url);
+        setWarrantyCustom(!isPresetWarranty(String(product.warranty_months)));
+      })
+      .catch(() => setError('โหลดข้อมูลสินค้าไม่สำเร็จ'));
+  }, [editId]);
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -107,8 +138,13 @@ export function AddProductView({ onNav, showToast }: ViewProps) {
     };
     setBusy(true);
     try {
-      await createProduct(input);
-      showToast(status === 'draft' ? 'บันทึกแบบร่างแล้ว' : 'บันทึกสินค้าใหม่เรียบร้อย');
+      if (isEdit && editId != null) {
+        await updateProduct(editId, input);
+        showToast(status === 'draft' ? 'ย้ายไปแบบร่างแล้ว' : 'บันทึกการแก้ไขแล้ว');
+      } else {
+        await createProduct(input);
+        showToast(status === 'draft' ? 'บันทึกแบบร่างแล้ว' : 'บันทึกสินค้าใหม่เรียบร้อย');
+      }
       onNav('inventory');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'บันทึกไม่สำเร็จ');
@@ -127,12 +163,12 @@ export function AddProductView({ onNav, showToast }: ViewProps) {
       <div className="page-head" style={{ marginBottom: 22 }}>
         <div>
           <button type="button" className="btn btn-sm btn-ghost" onClick={() => onNav('inventory')} style={{ marginBottom: 8 }}>← กลับไปคลังสินค้า</button>
-          <div className="page-title">เพิ่มสินค้าใหม่</div>
-          <div className="muted page-subtitle">กรอกข้อมูลสินค้า เพิ่ม Serial Number ของแต่ละเครื่อง และตั้งราคาขาย</div>
+          <div className="page-title">{isEdit ? 'แก้ไขสินค้า' : 'เพิ่มสินค้าใหม่'}</div>
+          <div className="muted page-subtitle">{isEdit ? 'แก้ไขข้อมูลสินค้า (จัดการ Serial ได้ในหน้ารายละเอียดสินค้า)' : 'กรอกข้อมูลสินค้า เพิ่ม Serial Number ของแต่ละเครื่อง และตั้งราคาขาย'}</div>
         </div>
         <div className="page-head-actions">
           <button type="button" className="btn" disabled={busy} onClick={() => save('draft')}>บันทึกแบบร่าง</button>
-          <button type="submit" className="btn btn-primary" disabled={busy}><Icons.check /> {busy ? 'กำลังบันทึก...' : 'บันทึกสินค้า'}</button>
+          <button type="submit" className="btn btn-primary" disabled={busy}><Icons.check /> {busy ? 'กำลังบันทึก...' : isEdit ? 'บันทึกการแก้ไข' : 'บันทึกสินค้า'}</button>
         </div>
       </div>
 
@@ -216,6 +252,7 @@ export function AddProductView({ onNav, showToast }: ViewProps) {
             </div>
           </div>
 
+          {!isEdit && (
           <div className="card card-pad">
             <div className="section-h"><div><h3>Serial Number ของแต่ละเครื่อง</h3><div className="muted section-sub">สต๊อก = จำนวน serial ที่เพิ่ม ({serials.length} เครื่อง)</div></div></div>
             <div className="field">
@@ -244,6 +281,7 @@ export function AddProductView({ onNav, showToast }: ViewProps) {
               </div>
             )}
           </div>
+          )}
 
           <div className="card card-pad">
             <div className="section-h"><div><h3>ข้อมูลเพิ่มเติม</h3></div></div>

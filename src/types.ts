@@ -62,6 +62,7 @@ export type ViewId =
   | 'dashboard'
   | 'inventory'
   | 'add-product'
+  | 'categories'
   | 'bundles'
   | 'sales'
   | 'analytics';

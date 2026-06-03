@@ -6,6 +6,7 @@ import { MobileNav } from './components/MobileNav';
 import { DashboardView } from './views/DashboardView';
 import { InventoryView } from './views/InventoryView';
 import { AddProductView } from './views/AddProductView';
+import { CategoriesView } from './views/CategoriesView';
 import { BundlesView } from './views/BundlesView';
 import { SalesView } from './views/SalesView';
 import { AnalyticsView } from './views/AnalyticsView';
@@ -19,6 +20,7 @@ export default function App() {
   const [view, setView] = useState<ViewId>('dashboard');
   const [toast, setToast] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editProductId, setEditProductId] = useState<number | null>(null);
   const { theme, set } = useTheme();
   const { user, loading, logout } = useAuth();
   const isMobile = useMediaQuery('(max-width: 900px)');
@@ -32,9 +34,18 @@ export default function App() {
 
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
-  // Navigating closes the mobile drawer and scrolls the content back to top.
+  // Navigating closes the mobile drawer. Reaching the product form via normal
+  // nav means "create" — so clear any pending edit target.
   const navigate = useCallback((id: ViewId) => {
+    if (id === 'add-product') setEditProductId(null);
     setView(id);
+    setDrawerOpen(false);
+  }, []);
+
+  // Open the product form in edit mode for a specific product.
+  const editProduct = useCallback((id: number) => {
+    setEditProductId(id);
+    setView('add-product');
     setDrawerOpen(false);
   }, []);
 
@@ -51,8 +62,9 @@ export default function App() {
   const renderView = () => {
     switch (view) {
       case 'dashboard': return <DashboardView onNav={navigate} />;
-      case 'inventory': return <InventoryView onNav={navigate} showToast={showToast} />;
-      case 'add-product': return <AddProductView onNav={navigate} showToast={showToast} />;
+      case 'inventory': return <InventoryView onNav={navigate} showToast={showToast} onEditProduct={editProduct} />;
+      case 'add-product': return <AddProductView onNav={navigate} showToast={showToast} editId={editProductId} />;
+      case 'categories': return <CategoriesView showToast={showToast} />;
       case 'bundles': return <BundlesView showToast={showToast} />;
       case 'sales': return <SalesView showToast={showToast} />;
       case 'analytics': return <AnalyticsView />;

@@ -19,6 +19,7 @@ import type { ViewId } from '../types';
 interface ViewProps {
   onNav: (id: ViewId) => void;
   showToast: (msg: string) => void;
+  onEditProduct: (id: number) => void;
 }
 
 type SortKey = 'name' | 'stock' | 'cost' | 'price';
@@ -35,7 +36,7 @@ function Thumb({ url, lg }: { url: string | null; lg?: boolean }) {
   );
 }
 
-export function InventoryView({ onNav, showToast }: ViewProps) {
+export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
   const [tab, setTab] = useState<ProductStatus>('active');
   const [products, setProducts] = useState<Product[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
@@ -111,6 +112,7 @@ export function InventoryView({ onNav, showToast }: ViewProps) {
         id={detailId}
         onBack={() => { setDetailId(null); loadList(); }}
         onDeleted={() => { setDetailId(null); loadList(); }}
+        onEdit={() => onEditProduct(detailId)}
         showToast={showToast}
       />
     );
@@ -251,10 +253,11 @@ interface DetailProps {
   id: number;
   onBack: () => void;
   onDeleted: () => void;
+  onEdit: () => void;
   showToast: (msg: string) => void;
 }
 
-function ProductDetail({ id, onBack, onDeleted, showToast }: DetailProps) {
+function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps) {
   const [product, setProduct] = useState<Product | null>(null);
   const [serials, setSerials] = useState<Serial[]>([]);
   const [loading, setLoading] = useState(true);
@@ -340,6 +343,7 @@ function ProductDetail({ id, onBack, onDeleted, showToast }: DetailProps) {
           <div className="muted page-subtitle">{product.sku || 'ยังไม่มี SKU'} · {product.category_name || 'ไม่ระบุหมวด'}{product.status === 'draft' ? ' · แบบร่าง' : ''}</div>
         </div>
         <div className="page-head-actions">
+          <button className="btn" onClick={onEdit}><Icons.edit /> แก้ไข</button>
           <button className="btn" onClick={onDeleteProduct}><Icons.trash /> ลบสินค้า</button>
         </div>
       </div>
