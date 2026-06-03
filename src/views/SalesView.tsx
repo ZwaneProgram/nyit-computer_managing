@@ -203,7 +203,7 @@ export function SalesView({ showToast }: ViewProps) {
 
           <div className="card">
             <div className="table-wrap">
-              <table className="tbl">
+              <table className="tbl tbl-cards">
                 <thead>
                   <tr>
                     <th>เลขที่บิล</th><th>วันที่</th><th>รายการ</th><th>ลูกค้า</th><th>พนักงาน</th>
@@ -213,18 +213,18 @@ export function SalesView({ showToast }: ViewProps) {
                 <tbody>
                   {history.map((t) => (
                     <tr key={t.id}>
-                      <td className="mono" style={{ fontSize: 12 }}>#{t.id}</td>
-                      <td><span className="muted" style={{ fontSize: 12.5 }}>{new Date(t.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}</span></td>
-                      <td>
+                      <td className="mono cell-primary" style={{ fontSize: 12 }}>#{t.id}</td>
+                      <td data-label="วันที่"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(t.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}</span></td>
+                      <td data-label="รายการ">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           {t.kind === 'bundle' ? <span className="chip chip-accent">ชุด</span> : <span className="chip">ชิ้น</span>}
                           <span>{t.label}</span>
                         </div>
                       </td>
-                      <td>{t.customer_name || '—'}</td>
-                      <td><span className="muted">{t.staff_name || t.staff_username || '—'}</span></td>
-                      <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(t.total)}</td>
-                      <td className="num" style={{ textAlign: 'right', color: 'var(--pos)' }}>+{fmtTHB(t.profit)}</td>
+                      <td data-label="ลูกค้า">{t.customer_name || '—'}</td>
+                      <td data-label="พนักงาน"><span className="muted">{t.staff_name || t.staff_username || '—'}</span></td>
+                      <td className="num" data-label="ยอดรวม" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(t.total)}</td>
+                      <td className="num" data-label="กำไร" style={{ textAlign: 'right', color: 'var(--pos)' }}>+{fmtTHB(t.profit)}</td>
                     </tr>
                   ))}
                   {!historyLoading && history.length === 0 && (

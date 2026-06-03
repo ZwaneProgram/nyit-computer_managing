@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import type { Series } from './BarChart';
+import { thinLabels, type Series } from './BarChart';
 
 interface AreaChartProps {
   labels: string[];
@@ -45,9 +45,9 @@ export function AreaChart({ labels, series, height = 260 }: AreaChartProps) {
           );
         })}
       </svg>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-        {labels.map((l, i) => (
-          <span key={i} style={{ fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{l}</span>
+      <div style={{ display: 'flex', marginTop: 6 }}>
+        {thinLabels(labels).map((l, i) => (
+          <span key={i} style={{ flex: 1, textAlign: 'center', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden' }}>{l}</span>
         ))}
       </div>
       <div style={{ display: 'flex', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>

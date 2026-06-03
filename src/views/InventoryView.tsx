@@ -177,7 +177,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
         </div>
 
         <div className="table-wrap table-flush">
-          <table className="tbl">
+          <table className="tbl tbl-cards">
             <thead>
               <tr>
                 <SortHd k="name">สินค้า</SortHd>
@@ -193,7 +193,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
             <tbody>
               {pageItems.map((p) => (
                 <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => setDetailId(p.id)}>
-                  <td>
+                  <td className="cell-primary">
                     <div className="product-cell">
                       <Thumb url={p.image_url} />
                       <div>
@@ -202,13 +202,13 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                       </div>
                     </div>
                   </td>
-                  <td><div className="mono" style={{ fontSize: 12 }}>{p.sku || '—'}</div></td>
-                  <td><span className="muted" style={{ fontSize: 12.5 }}>{p.category_name || '—'}</span></td>
-                  <td className="num" style={{ textAlign: 'right' }}>{p.stock}</td>
-                  <td className="num muted" style={{ textAlign: 'right' }}>{fmtTHB(p.cost)}</td>
-                  <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(p.price)}</td>
-                  <td>{statusChip(p)}</td>
-                  <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
+                  <td data-label="SKU"><div className="mono" style={{ fontSize: 12 }}>{p.sku || '—'}</div></td>
+                  <td data-label="หมวด"><span className="muted" style={{ fontSize: 12.5 }}>{p.category_name || '—'}</span></td>
+                  <td className="num" data-label="คงเหลือ" style={{ textAlign: 'right' }}>{p.stock}</td>
+                  <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{fmtTHB(p.cost)}</td>
+                  <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(p.price)}</td>
+                  <td data-label="สถานะ">{statusChip(p)}</td>
+                  <td className="cell-actions" style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
                       <button className="btn btn-sm btn-icon btn-ghost" title="ดูรายละเอียด" onClick={() => setDetailId(p.id)}><Icons.arrowRight /></button>
                       <button className="btn btn-sm btn-icon btn-ghost" title="ลบ" onClick={() => onDelete(p)}><Icons.trash /></button>

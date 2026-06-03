@@ -449,9 +449,6 @@ input, select, textarea { font-family: inherit; }
 .confirm-check { width: 72px; height: 72px; border-radius: 50%; background: var(--pos-soft); color: var(--pos); display: grid; place-items: center; margin-bottom: 20px; }
 
 /* Analytics */
-.range-seg { display: flex; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
-.range-btn { background: transparent; border: 0; box-shadow: none; }
-.range-btn[data-active="true"] { background: var(--surface-sunk); font-weight: 600; }
 .month-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; padding: 12px 0; align-items: center; }
 
 /* Toast */
@@ -560,8 +557,6 @@ input, select, textarea { font-family: inherit; }
   .page-title { font-size: 19px; }
   .page-head-actions { width: 100%; }
   .page-head-actions .btn { flex: 1; justify-content: center; }
-  .page-head-actions .range-seg { flex: 1 1 100%; }
-  .range-seg .range-btn { flex: 1; }
 
   .kpi { min-height: 0; padding: 16px; }
   .kpi-value { font-size: 24px; }
@@ -574,6 +569,53 @@ input, select, textarea { font-family: inherit; }
 
   /* Confirmation buttons full width */
   .confirm-screen .btn { flex: 1; justify-content: center; }
+
+  /* Bigger tap targets on phones (≈36px) for fiddly controls */
+  .btn-sm { height: 36px; }
+  .btn-icon.btn-sm { width: 36px; }
+  .pagn-pages button { width: 36px; height: 36px; }
+  .tab { padding: 12px 14px; }
+  .quick-chip { height: 34px; }
+
+  /* ----- Card view: turn data tables into stacked cards (no sideways scroll) -----
+     Opt-in per table via class "tbl-cards" + a data-label on each <td>. */
+  .table-wrap .tbl.tbl-cards { min-width: 0; }
+  .tbl-cards thead { display: none; }
+  .tbl-cards tbody, .tbl-cards tr, .tbl-cards td { display: block; width: 100%; }
+  .tbl-cards tr {
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    margin-bottom: 10px;
+    padding: 6px 14px;
+    background: var(--surface);
+  }
+  .tbl-cards tbody tr:last-child td { border-bottom: 0; }
+  .tbl-cards tbody tr:hover td { background: transparent; }
+  .tbl-cards td {
+    height: auto;
+    min-height: 40px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 9px 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    text-align: right;
+  }
+  .tbl-cards td::before {
+    content: attr(data-label);
+    color: var(--ink-3);
+    font-size: 12px;
+    font-weight: 500;
+    text-align: left;
+    flex-shrink: 0;
+  }
+  /* The first cell (product/name) spans full width, left-aligned, no label. */
+  .tbl-cards td.cell-primary { justify-content: flex-start; text-align: left; padding-top: 12px; }
+  .tbl-cards td.cell-primary::before,
+  .tbl-cards td:not([data-label])::before { display: none; }
+  /* The actions cell (buttons) sits on its own row, right-aligned, no border. */
+  .tbl-cards td.cell-actions { border-bottom: 0; justify-content: flex-end; }
+  /* No divider under the last field of a card. */
+  .tbl-cards td:last-child { border-bottom: 0; }
 }
 
 /* Very small phones */

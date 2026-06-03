@@ -13,8 +13,17 @@ interface BarChartProps {
   legend?: boolean;
 }
 
+/** Keep at most `max` labels non-empty (blank the rest) so dense ranges
+ *  (e.g. 30/90-day daily buckets) stay readable instead of crushing together. */
+export function thinLabels(labels: string[], max = 12): string[] {
+  if (labels.length <= max) return labels;
+  const step = Math.ceil(labels.length / max);
+  return labels.map((l, i) => (i % step === 0 || i === labels.length - 1 ? l : ''));
+}
+
 export function BarChart({ labels, series, height = 220, legend }: BarChartProps) {
   const max = Math.max(...series.flatMap((s) => s.data)) * 1.15 || 1;
+  const shownLabels = thinLabels(labels);
   const groups = labels.length;
   const groupW = 100 / groups;
   const barW = (groupW * 0.7) / series.length;
@@ -46,7 +55,7 @@ export function BarChart({ labels, series, height = 220, legend }: BarChartProps
         )}
       </svg>
       <div style={{ display: 'flex', marginTop: 6 }}>
-        {labels.map((l, i) => (
+        {shownLabels.map((l, i) => (
           <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden' }}>{l}</div>
         ))}
       </div>
