@@ -58,9 +58,26 @@ function normSale(r: Record<string, unknown>): Sale {
   };
 }
 
-export async function fetchSales(): Promise<Sale[]> {
-  const { sales } = await http.get<{ sales: Record<string, unknown>[] }>('/api/sales');
-  return sales.map(normSale);
+export interface SalesQuery {
+  from?: string;
+  to?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchSales(params: SalesQuery = {}): Promise<{ sales: Sale[]; total: number }> {
+  const sp = new URLSearchParams();
+  if (params.from) sp.set('from', params.from);
+  if (params.to) sp.set('to', params.to);
+  if (params.q) sp.set('q', params.q);
+  if (params.limit != null) sp.set('limit', String(params.limit));
+  if (params.offset != null) sp.set('offset', String(params.offset));
+  const qs = sp.toString();
+  const { sales, total } = await http.get<{ sales: Record<string, unknown>[]; total: number }>(
+    `/api/sales${qs ? `?${qs}` : ''}`,
+  );
+  return { sales: sales.map(normSale), total: num(total) };
 }
 
 export async function createSale(payload: NewSale): Promise<Sale> {

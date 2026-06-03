@@ -23,7 +23,7 @@ interface ViewProps {
 }
 
 type SortKey = 'name' | 'stock' | 'cost' | 'price';
-type StockFilter = 'all' | 'in' | 'low' | 'out';
+type StockFilter = 'all' | 'in' | 'out';
 
 /** Square thumbnail: photo if present, otherwise "ไม่มีรูป". */
 function Thumb({ url, lg }: { url: string | null; lg?: boolean }) {
@@ -69,9 +69,8 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
   const filtered = useMemo(() => {
     let arr = products.slice();
     if (cat !== 'all') arr = arr.filter((p) => p.category_id === cat);
-    if (stockFilter === 'low') arr = arr.filter((p) => p.stock <= p.low && p.stock > 0);
     if (stockFilter === 'out') arr = arr.filter((p) => p.stock === 0);
-    if (stockFilter === 'in') arr = arr.filter((p) => p.stock > p.low);
+    if (stockFilter === 'in') arr = arr.filter((p) => p.stock > 0);
     if (q) {
       const s = q.toLowerCase();
       arr = arr.filter((p) =>
@@ -128,15 +127,14 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
   );
 
   const statusChip = (p: Product) =>
-    p.stock === 0 ? <span className="chip chip-neg chip-dot">หมด</span>
-      : p.stock <= p.low ? <span className="chip chip-warn chip-dot">เหลือน้อย</span>
-        : <span className="chip chip-pos chip-dot">พร้อมขาย</span>;
+    p.stock === 0
+      ? <span className="chip chip-neg chip-dot">หมด</span>
+      : <span className="chip chip-pos chip-dot">มีของ</span>;
 
   const quickFilters: { id: StockFilter; label: string; count: number }[] = [
     { id: 'all', label: 'ทั้งหมด', count: products.length },
-    { id: 'in', label: 'มีสต๊อก', count: products.filter((p) => p.stock > p.low).length },
-    { id: 'low', label: 'เหลือน้อย', count: products.filter((p) => p.stock <= p.low && p.stock > 0).length },
-    { id: 'out', label: 'หมดสต๊อก', count: products.filter((p) => p.stock === 0).length },
+    { id: 'in', label: 'มีของ', count: products.filter((p) => p.stock > 0).length },
+    { id: 'out', label: 'หมด', count: products.filter((p) => p.stock === 0).length },
   ];
 
   const totalValue = products.reduce((s, p) => s + p.cost * p.stock, 0);

@@ -35,10 +35,6 @@ export function Topbar({ title, crumb, theme, onSet, user, onLogout, onMenu }: T
           {theme.dark ? <Icons.sun /> : <Icons.moon />}
         </button>
         <SettingsMenu theme={theme} onSet={onSet} />
-        <button className="btn btn-icon btn-ghost notif-btn" title="การแจ้งเตือน" aria-label="การแจ้งเตือน">
-          <Icons.bell />
-          <span className="notif-dot" />
-        </button>
         <button
           className="btn btn-icon btn-ghost"
           onClick={onLogout}

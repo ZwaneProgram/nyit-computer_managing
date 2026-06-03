@@ -29,8 +29,8 @@ export function DashboardView({ onNav }: ViewProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([fetchStats(), fetchSales()])
-      .then(([s, sales]) => { setStats(s); setRecent(sales.slice(0, 5)); })
+    Promise.all([fetchStats(), fetchSales({ limit: 5 })])
+      .then(([s, r]) => { setStats(s); setRecent(r.sales); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
