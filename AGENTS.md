@@ -29,7 +29,6 @@ To run dev: backend `cd server && npm run dev` (:3000), frontend `npm run dev` (
 - [ ] **4. App loose ends (small):**
   - [ ] Topbar **notification bell** (🔔 + red dot in `Topbar.tsx`) is decorative/unwired — hook to low-stock alerts or remove.
   - [ ] **Analytics date-range filter** — the 7d/30d/90d/1y selector was removed; analytics is currently all-time / fixed windows. `/api/stats` would need range params.
-  - [ ] **Manual stock adjustments / returns (RMA)** — serial status `'returned'` exists in DB but no UI flow (mark a unit damaged/lost/returned outside a sale).
   - [ ] **Per-serial cost** — cost is currently per product, not per unit (matters if same model is bought at different prices).
   - [ ] **Sales history** has no pagination / date filter (fine until volume grows).
 
