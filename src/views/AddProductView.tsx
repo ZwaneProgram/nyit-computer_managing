@@ -17,7 +17,15 @@ interface ViewProps {
   showToast: (msg: string) => void;
 }
 
-const WARRANTIES = ['0', '12', '24', '36', '60', '84'];
+const WARRANTY_PRESETS = [
+  { v: '0', label: 'ไม่มี' },
+  { v: '3', label: '3 เดือน' },
+  { v: '6', label: '6 เดือน' },
+  { v: '12', label: '12 เดือน (1 ปี)' },
+  { v: '24', label: '24 เดือน (2 ปี)' },
+  { v: '36', label: '36 เดือน (3 ปี)' },
+  { v: '60', label: '60 เดือน (5 ปี)' },
+];
 
 export function AddProductView({ onNav, showToast }: ViewProps) {
   const [cats, setCats] = useState<Category[]>([]);
@@ -26,6 +34,7 @@ export function AddProductView({ onNav, showToast }: ViewProps) {
     name: '', sku: '', brand: '', model: '',
     cost: '', price: '', low: '5', warranty: '36', notes: '',
   });
+  const [warrantyCustom, setWarrantyCustom] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [serials, setSerials] = useState<string[]>([]);
@@ -181,10 +190,21 @@ export function AddProductView({ onNav, showToast }: ViewProps) {
                   <input className="input num" type="number" placeholder="0" value={form.price} onChange={(e) => set('price', e.target.value)} /></div>
               </div>
               <div className="field">
-                <label className="field-label">รับประกัน (เดือน)</label>
-                <select className="select" value={form.warranty} onChange={(e) => set('warranty', e.target.value)}>
-                  {WARRANTIES.map((m) => <option key={m} value={m}>{m === '0' ? 'ไม่มี' : `${m} เดือน`}</option>)}
+                <label className="field-label">รับประกัน</label>
+                <select
+                  className="select"
+                  value={warrantyCustom ? 'custom' : form.warranty}
+                  onChange={(e) => {
+                    if (e.target.value === 'custom') { setWarrantyCustom(true); }
+                    else { setWarrantyCustom(false); set('warranty', e.target.value); }
+                  }}
+                >
+                  {WARRANTY_PRESETS.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
+                  <option value="custom">อื่นๆ (กำหนดเอง)</option>
                 </select>
+                {warrantyCustom && (
+                  <input className="input num" style={{ marginTop: 6 }} type="number" min="0" placeholder="ระบุจำนวนเดือน" value={form.warranty} onChange={(e) => set('warranty', e.target.value)} autoFocus />
+                )}
               </div>
             </div>
             <div className="profit-strip">
