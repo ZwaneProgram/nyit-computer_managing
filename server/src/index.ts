@@ -21,9 +21,20 @@ const app = Fastify({ logger: true });
 await app.register(cookie, { secret: process.env.COOKIE_SECRET || 'dev-cookie-secret' });
 await app.register(multipart, { limits: { fileSize: 4 * 1024 * 1024, files: 1 } });
 
-// Serve uploaded product images at /uploads/* (Caddy can serve these in prod too).
+// Serve uploaded product images at /uploads/*. Files live in UPLOAD_DIR on THIS
+// machine. When local dev shares the VPS database, image rows can point at files
+// that only exist on the VPS (and vice-versa). So: serve the file if it's here,
+// otherwise — when UPLOADS_FALLBACK_URL is set (DEV ONLY) — redirect to that host.
+// On the VPS this var MUST stay unset, or it would redirect to itself.
 mkdirSync(UPLOAD_DIR, { recursive: true });
-await app.register(fastifyStatic, { root: UPLOAD_DIR, prefix: '/uploads/' });
+const UPLOADS_FALLBACK_URL = process.env.UPLOADS_FALLBACK_URL?.replace(/\/+$/, '');
+await app.register(fastifyStatic, { root: UPLOAD_DIR, serve: false });
+app.get('/uploads/*', (req, reply) => {
+  const rel = (req.params as Record<string, string>)['*'];
+  if (rel && existsSync(join(UPLOAD_DIR, rel))) return reply.sendFile(rel);
+  if (rel && UPLOADS_FALLBACK_URL) return reply.redirect(`${UPLOADS_FALLBACK_URL}/uploads/${rel}`);
+  return reply.code(404).send({ error: 'not found' });
+});
 
 app.get('/api/health', async () => ({ ok: true, service: 'nyit-shop-server' }));
 
