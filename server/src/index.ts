@@ -7,6 +7,7 @@ import { mkdirSync } from 'node:fs';
 import { authRoutes } from './auth';
 import { categoryRoutes } from './routes/categories';
 import { productRoutes } from './routes/products';
+import { bundleRoutes } from './routes/bundles';
 import { uploadRoutes, UPLOAD_DIR } from './routes/uploads';
 
 const app = Fastify({ logger: true });
@@ -23,6 +24,7 @@ app.get('/api/health', async () => ({ ok: true, service: 'nyit-shop-server' }));
 await app.register(authRoutes);
 await app.register(categoryRoutes);
 await app.register(productRoutes);
+await app.register(bundleRoutes);
 await app.register(uploadRoutes);
 
 const port = Number(process.env.PORT || 3000);
