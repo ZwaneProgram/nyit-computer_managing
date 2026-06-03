@@ -34,7 +34,7 @@ export function SettingsView({ showToast }: ViewProps) {
         </div>
       </div>
 
-      {isOwner && <ShopInfoCard showToast={showToast} fail={fail} />}
+      {isOwner && <DefaultsCard showToast={showToast} fail={fail} />}
       <MyPasswordCard showToast={showToast} fail={fail} />
       {isOwner && <AccountsCard showToast={showToast} fail={fail} />}
     </div>
@@ -43,8 +43,11 @@ export function SettingsView({ showToast }: ViewProps) {
 
 type FailFn = (err: unknown, fallback: string) => void;
 
-// ---------- Shop info + default low-stock threshold (owner only) ----------
-function ShopInfoCard({ showToast, fail }: { showToast: (m: string) => void; fail: FailFn }) {
+// ---------- Default low-stock threshold (owner only) ----------
+// Loads the full settings row so we can save it back unchanged except for
+// default_low (shop name/address/etc. stay in the DB for future receipts but
+// aren't edited here).
+function DefaultsCard({ showToast, fail }: { showToast: (m: string) => void; fail: FailFn }) {
   const [form, setForm] = useState<ShopSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -52,21 +55,17 @@ function ShopInfoCard({ showToast, fail }: { showToast: (m: string) => void; fai
   useEffect(() => {
     fetchSettings()
       .then(setForm)
-      .catch((err) => fail(err, 'โหลดข้อมูลร้านไม่สำเร็จ'))
+      .catch((err) => fail(err, 'โหลดค่าตั้งค่าไม่สำเร็จ'))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const set = <K extends keyof ShopSettings>(k: K, v: ShopSettings[K]) =>
-    setForm((f) => (f ? { ...f, [k]: v } : f));
-
   const save = async () => {
     if (!form) return;
-    if (!form.shop_name.trim()) return showToast('กรุณากรอกชื่อร้าน');
     setSaving(true);
     try {
       setForm(await updateSettings(form));
-      showToast('บันทึกข้อมูลร้านแล้ว');
+      showToast('บันทึกแล้ว');
     } catch (err) {
       fail(err, 'บันทึกไม่สำเร็จ');
     } finally {
@@ -76,39 +75,20 @@ function ShopInfoCard({ showToast, fail }: { showToast: (m: string) => void; fai
 
   return (
     <div className="card card-pad" style={{ maxWidth: 640 }}>
-      <div className="section-h"><div><h3>ข้อมูลร้าน</h3><div className="muted section-sub">แสดงบนใบเสร็จและทั่วระบบ</div></div></div>
+      <div className="section-h"><div><h3>ค่าเริ่มต้น</h3><div className="muted section-sub">ค่าตั้งต้นของระบบ</div></div></div>
       {loading || !form ? (
         <div className="muted" style={{ padding: 12 }}>กำลังโหลด...</div>
       ) : (
         <div className="grid" style={{ gap: 12 }}>
-          <Field label="ชื่อร้าน">
-            <input className="input" value={form.shop_name} onChange={(e) => set('shop_name', e.target.value)} />
+          <Field label="แจ้งเตือนสต๊อกต่ำเริ่มต้น" hint="ใช้เป็นค่าตั้งต้นเมื่อเพิ่มสินค้าใหม่" style={{ maxWidth: 220 }}>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              value={form.default_low}
+              onChange={(e) => setForm((f) => (f ? { ...f, default_low: Math.max(0, Number(e.target.value) || 0) } : f))}
+            />
           </Field>
-          <Field label="ที่อยู่">
-            <textarea className="input" rows={2} value={form.address ?? ''} onChange={(e) => set('address', e.target.value)} />
-          </Field>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <Field label="เบอร์โทร" style={{ flex: 1, minWidth: 160 }}>
-              <input className="input" value={form.phone ?? ''} onChange={(e) => set('phone', e.target.value)} />
-            </Field>
-            <Field label="เลขประจำตัวผู้เสียภาษี" style={{ flex: 1, minWidth: 160 }}>
-              <input className="input" value={form.tax_id ?? ''} onChange={(e) => set('tax_id', e.target.value)} />
-            </Field>
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <Field label="แจ้งเตือนสต๊อกต่ำเริ่มต้น" hint="ใช้เป็นค่าตั้งต้นเมื่อเพิ่มสินค้าใหม่" style={{ flex: 1, minWidth: 160 }}>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                value={form.default_low}
-                onChange={(e) => set('default_low', Math.max(0, Number(e.target.value) || 0))}
-              />
-            </Field>
-            <Field label="สกุลเงิน" style={{ flex: 1, minWidth: 160 }}>
-              <input className="input" value={form.currency} onChange={(e) => set('currency', e.target.value)} />
-            </Field>
-          </div>
           <div>
             <button className="btn btn-primary" onClick={save} disabled={saving}>
               <Icons.check /> บันทึก
