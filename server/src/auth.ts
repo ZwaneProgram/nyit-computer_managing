@@ -5,6 +5,9 @@ import { query } from './db';
 
 const COOKIE = 'nyit_session';
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+// Set COOKIE_SECURE=true in production once the site is on HTTPS. Left false for
+// plain-http access (e.g. the IP:port test deploy) or the cookie won't be sent.
+const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
 
 interface User {
   id: number;
@@ -95,6 +98,7 @@ export async function authRoutes(app: FastifyInstance) {
     reply.setCookie(COOKIE, sign(u.id), {
       httpOnly: true,
       sameSite: 'lax',
+      secure: COOKIE_SECURE,
       path: '/',
       maxAge: MAX_AGE,
     });
