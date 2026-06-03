@@ -1,91 +1,146 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icons } from '../components/Icons';
-import { BUNDLES, PRODUCTS, TXNS, productById } from '../data/catalog';
 import { fmtTHB } from '../data/format';
+import { fetchProducts, type Product } from '../data/inventory';
+import { fetchBundles, type Bundle } from '../data/bundles';
+import { createSale, fetchSales, type NewSale, type Sale } from '../data/sales';
+import { ApiError } from '../lib/api';
 
 interface ViewProps {
   showToast: (msg: string) => void;
 }
 
-interface LineItem {
-  id: string;
-  name: string;
-  sku: string;
-  cat?: string;
-  cost: number;
-  price: number;
-  qty: number;
-  isBundle?: boolean;
+function Thumb({ url }: { url: string | null }) {
+  return (
+    <div className="thumb">
+      {url
+        ? <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+        : <span style={{ fontSize: 7, color: 'var(--ink-4)' }}>ไม่มีรูป</span>}
+    </div>
+  );
 }
 
-interface Customer {
-  name: string;
-  phone: string;
-  address: string;
-  taxId: string;
-}
-
-const EMPTY_CUSTOMER: Customer = { name: '', phone: '', address: '', taxId: '' };
+interface CartLine { product_id: number; qty: number }
 
 export function SalesView({ showToast }: ViewProps) {
   const [mode, setMode] = useState<'new' | 'history'>('new');
-  const [items, setItems] = useState<{ id: string; qty: number }[]>([
-    { id: 'P-0150', qty: 1 },
-    { id: 'P-0410', qty: 2 },
-    { id: 'P-0510', qty: 1 },
-  ]);
   const [type, setType] = useState<'item' | 'bundle'>('item');
-  const [bundleId, setBundleId] = useState('B-001');
-  const [customer, setCustomer] = useState<Customer>(EMPTY_CUSTOMER);
-  const [payment, setPayment] = useState('transfer');
-  const [paymentStatus, setPaymentStatus] = useState('paid');
-  const [shipping, setShipping] = useState(80);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [bundles, setBundles] = useState<Bundle[]>([]);
+
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [bundleId, setBundleId] = useState<number | null>(null);
+  const [bundleQty, setBundleQty] = useState(1);
+
+  const [customer, setCustomer] = useState({ name: '', phone: '', address: '', taxId: '' });
+  const [shipping, setShipping] = useState(0);
   const [discount, setDiscount] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQ, setSearchQ] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
 
-  const lineItems: LineItem[] =
-    type === 'item'
-      ? items.map((li) => {
-          const p = productById(li.id)!;
-          return { id: p.id, name: p.name, sku: p.sku, cat: p.cat, cost: p.cost, price: p.price, qty: li.qty };
-        })
-      : (() => {
-          const b = BUNDLES.find((x) => x.id === bundleId)!;
-          return [{ id: b.id, name: b.name, sku: 'BUNDLE/' + b.id, cost: b.cost, price: b.price, qty: 1, isBundle: true }];
-        })();
+  const [busy, setBusy] = useState(false);
+  const [confirmed, setConfirmed] = useState<Sale | null>(null);
 
-  const subtotal = lineItems.reduce((s, p) => s + p.price * p.qty, 0);
-  const cost = lineItems.reduce((s, p) => s + p.cost * p.qty, 0);
+  const [history, setHistory] = useState<Sale[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const loadProducts = useCallback(() => {
+    fetchProducts('active').then(setProducts).catch(() => {});
+    fetchBundles().then(setBundles).catch(() => {});
+  }, []);
+  useEffect(() => { loadProducts(); }, [loadProducts]);
+
+  const loadHistory = useCallback(() => {
+    setHistoryLoading(true);
+    fetchSales().then(setHistory).catch(() => {}).finally(() => setHistoryLoading(false));
+  }, []);
+  useEffect(() => { if (mode === 'history') loadHistory(); }, [mode, loadHistory]);
+
+  const productById = useMemo(() => {
+    const m = new Map<number, Product>();
+    products.forEach((p) => m.set(p.id, p));
+    return m;
+  }, [products]);
+
+  const selectedBundle = bundles.find((b) => b.id === bundleId) ?? null;
+
+  // Compute totals for the current draft.
+  const itemLines = cart.map((c) => ({ p: productById.get(c.product_id)!, qty: c.qty })).filter((l) => l.p);
+  const subtotal = type === 'item'
+    ? itemLines.reduce((s, l) => s + l.p.price * l.qty, 0)
+    : (selectedBundle ? selectedBundle.price * bundleQty : 0);
+  const cost = type === 'item'
+    ? itemLines.reduce((s, l) => s + l.p.cost * l.qty, 0)
+    : (selectedBundle ? selectedBundle.total_cost * bundleQty : 0);
   const total = subtotal + shipping - discount;
   const profit = subtotal - cost - discount;
 
-  const searchResults = PRODUCTS.filter(
-    (p) =>
-      !items.find((i) => i.id === p.id) &&
-      (searchQ ? p.name.toLowerCase().includes(searchQ.toLowerCase()) || p.sku.toLowerCase().includes(searchQ.toLowerCase()) : true),
-  ).slice(0, 6);
+  const itemCount = type === 'item' ? itemLines.reduce((s, l) => s + l.qty, 0) : bundleQty;
 
+  // Validity: something selected + not exceeding stock.
+  const overStock = type === 'item'
+    ? itemLines.some((l) => l.qty > l.p.stock)
+    : (!!selectedBundle && bundleQty > selectedBundle.stock);
+  const canConfirm = !busy && !overStock && (type === 'item' ? itemLines.length > 0 : !!selectedBundle && bundleQty > 0);
+
+  const searchResults = products.filter((p) =>
+    !cart.find((c) => c.product_id === p.id) &&
+    (searchQ ? p.name.toLowerCase().includes(searchQ.toLowerCase()) || (p.sku ?? '').toLowerCase().includes(searchQ.toLowerCase()) : true),
+  ).slice(0, 8);
+
+  const resetDraft = () => {
+    setCart([]); setBundleId(null); setBundleQty(1);
+    setCustomer({ name: '', phone: '', address: '', taxId: '' });
+    setShipping(0); setDiscount(0);
+  };
+
+  const confirm = async () => {
+    if (!canConfirm) return;
+    const payload: NewSale = {
+      kind: type,
+      customer_name: customer.name.trim() || null,
+      customer_phone: customer.phone.trim() || null,
+      customer_address: customer.address.trim() || null,
+      tax_id: customer.taxId.trim() || null,
+      shipping, discount,
+      ...(type === 'item'
+        ? { items: cart }
+        : { bundle_id: bundleId!, bundle_qty: bundleQty }),
+    };
+    setBusy(true);
+    try {
+      const sale = await createSale(payload);
+      setConfirmed(sale);
+      resetDraft();
+      loadProducts(); // stock changed
+      showToast('บันทึกการขายแล้ว · ตัดสต๊อกอัตโนมัติ');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'บันทึกการขายไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ----- SUCCESS SCREEN -----
   if (confirmed) {
     return (
       <div className="confirm-screen">
         <div className="confirm-check"><Icons.check style={{ width: 32, height: 32 }} /></div>
         <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.01em' }}>บันทึกการขายสำเร็จ</div>
-        <div className="muted" style={{ fontSize: 14, marginTop: 6, maxWidth: 420 }}>เลขที่บิล TXN-2410-0090 · สต๊อกถูกตัดอัตโนมัติ {lineItems.length} รายการ</div>
+        <div className="muted" style={{ fontSize: 14, marginTop: 6, maxWidth: 420 }}>เลขที่บิล #{confirmed.id} · สต๊อกถูกตัดอัตโนมัติแล้ว</div>
         <div className="card card-pad" style={{ marginTop: 28, width: '100%', maxWidth: 420, textAlign: 'left' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
             <span className="muted">ยอดรวม</span>
-            <span className="num" style={{ fontSize: 22, fontWeight: 600 }}>{fmtTHB(total)}</span>
+            <span className="num" style={{ fontSize: 22, fontWeight: 600 }}>{fmtTHB(confirmed.total)}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span className="muted">กำไรสุทธิ</span>
-            <span className="num" style={{ color: 'var(--pos)', fontWeight: 600 }}>+{fmtTHB(profit)}</span>
+            <span className="num" style={{ color: 'var(--pos)', fontWeight: 600 }}>+{fmtTHB(confirmed.profit)}</span>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 28, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <button className="btn"><Icons.receipt /> พิมพ์ใบเสร็จ</button>
-          <button className="btn btn-primary" onClick={() => { setConfirmed(false); setItems([]); setCustomer(EMPTY_CUSTOMER); }}>ขายรายการใหม่</button>
+          <button className="btn" onClick={() => { setConfirmed(null); setMode('history'); }}>ดูประวัติการขาย</button>
+          <button className="btn btn-primary" onClick={() => setConfirmed(null)}>ขายรายการใหม่</button>
         </div>
       </div>
     );
@@ -112,32 +167,30 @@ export function SalesView({ showToast }: ViewProps) {
               <thead>
                 <tr>
                   <th>เลขที่บิล</th><th>วันที่</th><th>รายการ</th><th>ลูกค้า</th><th>พนักงาน</th>
-                  <th style={{ textAlign: 'right' }}>ยอดรวม</th><th style={{ textAlign: 'right' }}>กำไร</th><th>สถานะ</th><th />
+                  <th style={{ textAlign: 'right' }}>ยอดรวม</th><th style={{ textAlign: 'right' }}>กำไร</th>
                 </tr>
               </thead>
               <tbody>
-                {TXNS.map((t) => (
+                {history.map((t) => (
                   <tr key={t.id}>
-                    <td className="mono" style={{ fontSize: 12 }}>{t.id}</td>
-                    <td><span className="muted" style={{ fontSize: 12.5 }}>{t.ts}</span></td>
+                    <td className="mono" style={{ fontSize: 12 }}>#{t.id}</td>
+                    <td><span className="muted" style={{ fontSize: 12.5 }}>{new Date(t.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}</span></td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {t.type === 'bundle' ? <span className="chip chip-accent">ชุด</span> : <span className="chip">ชิ้น</span>}
+                        {t.kind === 'bundle' ? <span className="chip chip-accent">ชุด</span> : <span className="chip">ชิ้น</span>}
                         <span>{t.label}</span>
                       </div>
                     </td>
-                    <td>{t.customer}</td>
-                    <td><span className="muted">{t.staff}</span></td>
-                    <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(t.amount)}</td>
-                    <td className="num" style={{ textAlign: 'right', color: t.status === 'refunded' ? 'var(--ink-3)' : 'var(--pos)' }}>{t.status === 'refunded' ? '—' : '+' + fmtTHB(t.profit)}</td>
-                    <td>
-                      {t.status === 'paid' && <span className="chip chip-pos chip-dot">ชำระแล้ว</span>}
-                      {t.status === 'pending' && <span className="chip chip-warn chip-dot">รอชำระ</span>}
-                      {t.status === 'refunded' && <span className="chip chip-neg chip-dot">คืนเงิน</span>}
-                    </td>
-                    <td><button className="btn btn-sm btn-icon btn-ghost"><Icons.more /></button></td>
+                    <td>{t.customer_name || '—'}</td>
+                    <td><span className="muted">{t.staff_name || t.staff_username || '—'}</span></td>
+                    <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(t.total)}</td>
+                    <td className="num" style={{ textAlign: 'right', color: 'var(--pos)' }}>+{fmtTHB(t.profit)}</td>
                   </tr>
                 ))}
+                {!historyLoading && history.length === 0 && (
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">ยังไม่มีประวัติการขาย</td></tr>
+                )}
+                {historyLoading && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">กำลังโหลด...</td></tr>}
               </tbody>
             </table>
           </div>
@@ -148,29 +201,15 @@ export function SalesView({ showToast }: ViewProps) {
             <div className="card card-pad">
               <div className="field-label" style={{ marginBottom: 8 }}>ประเภทการขาย</div>
               <div className="sale-type">
-                <button
-                  type="button"
-                  onClick={() => setType('item')}
-                  className="product-pick"
-                  style={{ flex: 1, borderColor: type === 'item' ? 'var(--accent)' : 'var(--border)', background: type === 'item' ? 'var(--accent-soft-2)' : 'var(--surface)' }}
-                >
+                <button type="button" onClick={() => setType('item')} className="product-pick"
+                  style={{ flex: 1, borderColor: type === 'item' ? 'var(--accent)' : 'var(--border)', background: type === 'item' ? 'var(--accent-soft-2)' : 'var(--surface)' }}>
                   <div className="sale-type-ic"><Icons.box /></div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 500 }}>สินค้าเดี่ยว</div>
-                    <div className="muted" style={{ fontSize: 12 }}>เลือกหลายชิ้นได้</div>
-                  </div>
+                  <div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>สินค้าเดี่ยว</div><div className="muted" style={{ fontSize: 12 }}>เลือกหลายชิ้นได้</div></div>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setType('bundle')}
-                  className="product-pick"
-                  style={{ flex: 1, borderColor: type === 'bundle' ? 'var(--accent)' : 'var(--border)', background: type === 'bundle' ? 'var(--accent-soft-2)' : 'var(--surface)' }}
-                >
+                <button type="button" onClick={() => setType('bundle')} className="product-pick"
+                  style={{ flex: 1, borderColor: type === 'bundle' ? 'var(--accent)' : 'var(--border)', background: type === 'bundle' ? 'var(--accent-soft-2)' : 'var(--surface)' }}>
                   <div className="sale-type-ic"><Icons.layers /></div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 500 }}>ชุดสินค้า (Bundle)</div>
-                    <div className="muted" style={{ fontSize: 12 }}>เลือก 1 ชุดจากที่ตั้งไว้</div>
-                  </div>
+                  <div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>ชุดสินค้า (Bundle)</div><div className="muted" style={{ fontSize: 12 }}>เลือก 1 ชุด</div></div>
                 </button>
               </div>
             </div>
@@ -186,16 +225,17 @@ export function SalesView({ showToast }: ViewProps) {
 
               {type === 'bundle' ? (
                 <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {BUNDLES.map((b) => (
-                    <button key={b.id} type="button" className={'product-pick' + (b.id === bundleId ? ' selected' : '')} onClick={() => setBundleId(b.id)}>
+                  {bundles.map((b) => (
+                    <button key={b.id} type="button" className={'product-pick' + (b.id === bundleId ? ' selected' : '')} onClick={() => { setBundleId(b.id); setBundleQty(1); }}>
                       <div className="thumb thumb-lg">{b.items.length}×</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 500 }}>{b.name}</div>
-                        <div className="muted mono" style={{ fontSize: 11.5, marginTop: 1 }}>{b.id} · {b.items.length} ชิ้น</div>
+                        <div className="muted mono" style={{ fontSize: 11.5, marginTop: 1 }}>{b.items.length} ชิ้น · ขายได้ {b.stock} ชุด</div>
                       </div>
                       <div className="num" style={{ fontWeight: 600 }}>{fmtTHB(b.price)}</div>
                     </button>
                   ))}
+                  {bundles.length === 0 && <div className="muted" style={{ padding: 16, textAlign: 'center' }}>ยังไม่มีชุดสินค้า</div>}
                 </div>
               ) : (
                 <>
@@ -205,56 +245,47 @@ export function SalesView({ showToast }: ViewProps) {
                         <Icons.search />
                         <input autoFocus placeholder="ค้นหาสินค้าจากชื่อ หรือ SKU..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} />
                       </div>
-                      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 240, overflowY: 'auto' }}>
+                      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 260, overflowY: 'auto' }}>
                         {searchResults.map((p) => (
-                          <button key={p.id} type="button" className="product-pick" onClick={() => { setItems((is) => [...is, { id: p.id, qty: 1 }]); setSearchQ(''); setShowSearch(false); }}>
-                            <div className="thumb">{p.cat.toUpperCase()}</div>
+                          <button key={p.id} type="button" className="product-pick" disabled={p.stock === 0}
+                            onClick={() => { setCart((is) => [...is, { product_id: p.id, qty: 1 }]); setSearchQ(''); setShowSearch(false); }}>
+                            <Thumb url={p.image_url} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontWeight: 500 }}>{p.name}</div>
-                              <div className="muted mono" style={{ fontSize: 11.5 }}>{p.sku} · คงเหลือ {p.stock}</div>
+                              <div className="muted mono" style={{ fontSize: 11.5 }}>{p.sku || '—'} · คงเหลือ {p.stock}</div>
                             </div>
                             <div className="num">{fmtTHB(p.price)}</div>
                           </button>
                         ))}
+                        {searchResults.length === 0 && <div className="muted" style={{ padding: 12, textAlign: 'center' }}>ไม่พบสินค้า</div>}
                       </div>
                     </div>
                   )}
                   <div className="table-wrap" style={{ borderRadius: 0 }}>
                     <table className="tbl">
-                      <thead>
-                        <tr>
-                          <th>สินค้า</th>
-                          <th style={{ textAlign: 'right', width: 110 }}>ราคา</th>
-                          <th style={{ textAlign: 'center', width: 130 }}>จำนวน</th>
-                          <th style={{ textAlign: 'right', width: 120 }}>ยอดรวม</th>
-                          <th style={{ width: 40 }} />
-                        </tr>
-                      </thead>
+                      <thead><tr><th>สินค้า</th><th style={{ textAlign: 'right', width: 110 }}>ราคา</th><th style={{ textAlign: 'center', width: 130 }}>จำนวน</th><th style={{ textAlign: 'right', width: 120 }}>ยอดรวม</th><th style={{ width: 40 }} /></tr></thead>
                       <tbody>
-                        {lineItems.map((p) => (
-                          <tr key={p.id}>
+                        {itemLines.map((l) => (
+                          <tr key={l.p.id}>
                             <td>
                               <div className="product-cell">
-                                <div className="thumb">{(p.cat ?? 'BD').toUpperCase()}</div>
-                                <div>
-                                  <div className="product-cell-name">{p.name}</div>
-                                  <div className="product-cell-meta">{p.sku}</div>
-                                </div>
+                                <Thumb url={l.p.image_url} />
+                                <div><div className="product-cell-name">{l.p.name}</div><div className="product-cell-meta">{l.p.sku || '—'} · คงเหลือ {l.p.stock}</div></div>
                               </div>
                             </td>
-                            <td className="num" style={{ textAlign: 'right' }}>{fmtTHB(p.price)}</td>
+                            <td className="num" style={{ textAlign: 'right' }}>{fmtTHB(l.p.price)}</td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                                <button className="btn btn-sm btn-icon btn-ghost" onClick={() => setItems((is) => is.map((i) => (i.id === p.id ? { ...i, qty: Math.max(1, i.qty - 1) } : i)))}>−</button>
-                                <span className="num" style={{ minWidth: 24, textAlign: 'center', fontWeight: 600 }}>{p.qty}</span>
-                                <button className="btn btn-sm btn-icon btn-ghost" onClick={() => setItems((is) => is.map((i) => (i.id === p.id ? { ...i, qty: i.qty + 1 } : i)))}>+</button>
+                                <button className="btn btn-sm btn-icon btn-ghost" onClick={() => setCart((is) => is.map((i) => (i.product_id === l.p.id ? { ...i, qty: Math.max(1, i.qty - 1) } : i)))}>−</button>
+                                <span className="num" style={{ minWidth: 24, textAlign: 'center', fontWeight: 600, color: l.qty > l.p.stock ? 'var(--neg)' : undefined }}>{l.qty}</span>
+                                <button className="btn btn-sm btn-icon btn-ghost" disabled={l.qty >= l.p.stock} onClick={() => setCart((is) => is.map((i) => (i.product_id === l.p.id ? { ...i, qty: i.qty + 1 } : i)))}>+</button>
                               </div>
                             </td>
-                            <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(p.price * p.qty)}</td>
-                            <td><button className="btn btn-sm btn-icon btn-ghost" onClick={() => setItems((is) => is.filter((i) => i.id !== p.id))}><Icons.trash /></button></td>
+                            <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(l.p.price * l.qty)}</td>
+                            <td><button className="btn btn-sm btn-icon btn-ghost" onClick={() => setCart((is) => is.filter((i) => i.product_id !== l.p.id))}><Icons.trash /></button></td>
                           </tr>
                         ))}
-                        {lineItems.length === 0 && (
+                        {itemLines.length === 0 && (
                           <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center' }} className="muted">ยังไม่มีรายการ — กด "เพิ่มสินค้า" เพื่อเริ่ม</td></tr>
                         )}
                       </tbody>
@@ -265,22 +296,12 @@ export function SalesView({ showToast }: ViewProps) {
             </div>
 
             <div className="card card-pad">
-              <div className="section-h">
-                <div><h3>ข้อมูลลูกค้า</h3><div className="muted section-sub">กรอกเพื่อออกใบเสร็จและบันทึกประวัติ</div></div>
-              </div>
+              <div className="section-h"><div><h3>ข้อมูลลูกค้า</h3><div className="muted section-sub">ไม่บังคับ — กรอกเพื่อบันทึกประวัติ</div></div></div>
               <div className="form-grid-2">
                 <div className="field"><label className="field-label">ชื่อลูกค้า</label><input className="input" placeholder="คุณ..." value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} /></div>
                 <div className="field"><label className="field-label">เบอร์โทร</label><input className="input mono" placeholder="08X-XXX-XXXX" value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} /></div>
                 <div className="field" style={{ gridColumn: '1 / -1' }}><label className="field-label">ที่อยู่จัดส่ง</label><input className="input" placeholder="(ไม่ต้องระบุ ถ้ารับเองที่หน้าร้าน)" value={customer.address} onChange={(e) => setCustomer({ ...customer, address: e.target.value })} /></div>
                 <div className="field"><label className="field-label">เลขผู้เสียภาษี (ถ้ามี)</label><input className="input mono" placeholder="0-0000-00000-00-0" value={customer.taxId} onChange={(e) => setCustomer({ ...customer, taxId: e.target.value })} /></div>
-                <div className="field"><label className="field-label">วิธีจัดส่ง</label>
-                  <select className="select" defaultValue="kerry">
-                    <option value="pickup">รับเองที่หน้าร้าน (ไม่มีค่าส่ง)</option>
-                    <option value="kerry">Kerry Express</option>
-                    <option value="flash">Flash Express</option>
-                    <option value="ems">ไปรษณีย์ EMS</option>
-                  </select>
-                </div>
               </div>
             </div>
           </div>
@@ -288,55 +309,20 @@ export function SalesView({ showToast }: ViewProps) {
           <div className="col-5">
             <div className="sticky-aside">
               <div className="card card-pad">
-                <div className="section-h"><div><h3>การชำระเงิน</h3></div></div>
-                <div className="field" style={{ marginBottom: 14 }}>
-                  <label className="field-label">ช่องทาง</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-                    {[
-                      { id: 'cash', label: 'เงินสด' },
-                      { id: 'transfer', label: 'โอน' },
-                      { id: 'card', label: 'บัตร' },
-                      { id: 'qr', label: 'QR' },
-                    ].map((o) => (
-                      <button
-                        key={o.id}
-                        type="button"
-                        onClick={() => setPayment(o.id)}
-                        className="btn btn-sm"
-                        style={{ width: '100%', padding: 0, height: 38, background: payment === o.id ? 'var(--ink)' : 'var(--surface)', color: payment === o.id ? 'var(--bg)' : 'var(--ink)', borderColor: payment === o.id ? 'var(--ink)' : 'var(--border)' }}
-                      >
-                        {o.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="field">
-                  <label className="field-label">สถานะการชำระ</label>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {[
-                      { id: 'paid', label: 'ชำระแล้ว' },
-                      { id: 'pending', label: 'รอชำระ' },
-                      { id: 'partial', label: 'มัดจำบางส่วน' },
-                    ].map((o) => (
-                      <button
-                        key={o.id}
-                        type="button"
-                        onClick={() => setPaymentStatus(o.id)}
-                        className="btn btn-sm"
-                        style={{ flex: 1, background: paymentStatus === o.id ? 'var(--accent-soft)' : 'var(--surface)', color: paymentStatus === o.id ? 'var(--accent)' : 'var(--ink-2)', borderColor: paymentStatus === o.id ? 'transparent' : 'var(--border)', fontWeight: paymentStatus === o.id ? 600 : 500 }}
-                      >
-                        {o.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="card card-pad">
                 <div className="section-h"><div><h3>สรุปคำสั่งซื้อ</h3></div></div>
+                {type === 'bundle' && selectedBundle && (
+                  <div className="field" style={{ marginBottom: 12 }}>
+                    <label className="field-label">จำนวนชุด (ขายได้ {selectedBundle.stock})</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button className="btn btn-sm btn-icon btn-ghost" onClick={() => setBundleQty((q) => Math.max(1, q - 1))}>−</button>
+                      <span className="num" style={{ minWidth: 28, textAlign: 'center', fontWeight: 600, color: bundleQty > selectedBundle.stock ? 'var(--neg)' : undefined }}>{bundleQty}</span>
+                      <button className="btn btn-sm btn-icon btn-ghost" disabled={bundleQty >= selectedBundle.stock} onClick={() => setBundleQty((q) => q + 1)}>+</button>
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span className="muted">สินค้า ({lineItems.reduce((s, i) => s + i.qty, 0)} ชิ้น)</span>
+                    <span className="muted">{type === 'bundle' ? `ชุดสินค้า (${itemCount})` : `สินค้า (${itemCount} ชิ้น)`}</span>
                     <span className="num">{fmtTHB(subtotal)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -364,22 +350,12 @@ export function SalesView({ showToast }: ViewProps) {
                 </div>
               </div>
 
-              <div className="card card-pad auto-stock-note">
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12.5 }}>
-                  <Icons.refresh style={{ color: 'var(--accent)', marginTop: 1 }} />
-                  <div>
-                    <div style={{ fontWeight: 600, color: 'var(--ink)' }}>สต๊อกจะถูกตัดอัตโนมัติ</div>
-                    <div className="muted" style={{ marginTop: 2 }}>เมื่อกดยืนยัน ระบบจะลดจำนวนสินค้าในคลังตามรายการ และบันทึก Serial Number ที่ขายออกไป</div>
-                  </div>
-                </div>
-              </div>
+              {overStock && (
+                <div className="auth-error" role="alert"><Icons.warning style={{ width: 15, height: 15, flexShrink: 0 }} /><span>จำนวนเกินสต๊อกที่มี</span></div>
+              )}
 
-              <button
-                className="btn btn-primary checkout-btn"
-                disabled={!lineItems.length}
-                onClick={() => { setConfirmed(true); showToast('เปิดบิลสำเร็จ บันทึกแล้ว'); }}
-              >
-                <Icons.check /> ยืนยันการขาย · {fmtTHB(total)}
+              <button className="btn btn-primary checkout-btn" disabled={!canConfirm} onClick={confirm}>
+                <Icons.check /> {busy ? 'กำลังบันทึก...' : `ยืนยันการขาย · ${fmtTHB(total)}`}
               </button>
             </div>
           </div>
