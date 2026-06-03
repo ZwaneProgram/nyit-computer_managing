@@ -33,6 +33,10 @@ To run dev: backend `cd server && npm run dev` (:3000), frontend `npm run dev` (
   - [ ] **Per-serial cost** — cost is currently per product, not per unit (matters if same model is bought at different prices).
   - Also 2026-06-03: **Inventory status simplified to 2 states** (`มีของ`/`หมด`) — dropped the `เหลือน้อย` chip + quick-filter (Inventory view only; `products.low` reorder point + Dashboard low-stock card + Settings threshold kept untouched).
 
+- [ ] **5. VPS hardening (later — do soon, real data is live):**
+  - [ ] **pm2 boot-persistence** — confirm the app auto-starts after a reboot: `pm2 startup systemd -u root --hp /root` (run the line it prints), then `pm2 save`. Test with a reboot if possible.
+  - [ ] **Nightly `pg_dump` backup cron** — `DEPLOY.md` §Backups: `( crontab -l 2>/dev/null; echo "0 2 * * * sudo -u postgres pg_dump nyit > /root/nyit-backup-\$(date +\%F).sql" ) | crontab -`. Confirm it's installed and producing files.
+
 PARKED (later / YAGNI, intentionally not built): customers/CRM · suppliers & purchase orders · multi-branch · barcode/QR scanning.
 
 NOTE: user said the **Inventory part may be restructured later** ("might drop tables / redo") — confirm with them before building anything that deeply depends on the current inventory schema.
