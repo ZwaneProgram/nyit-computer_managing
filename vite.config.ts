@@ -7,8 +7,9 @@ export default defineConfig({
   server: {
     host: true, // expose on LAN so the shop's phone/tablet can open it during dev
     proxy: {
-      // Forward API calls to the Fastify backend during development.
+      // Forward API calls + uploaded images to the Fastify backend during dev.
       '/api': 'http://localhost:3000',
+      '/uploads': 'http://localhost:3000',
     },
   },
 });

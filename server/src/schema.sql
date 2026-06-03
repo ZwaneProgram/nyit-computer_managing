@@ -17,31 +17,37 @@ create table if not exists categories (
   sort int  not null default 0
 );
 
+-- A product is a *model* (e.g. "RTX 5070"). Physical units live in
+-- product_serials, so stock = count of in_stock serials (derived, not stored).
+-- sku is nullable because drafts can be saved incomplete.
 create table if not exists products (
   id              bigint generated always as identity primary key,
   category_id     bigint references categories(id) on delete set null,
   name            text not null,
-  sku             text not null unique,
+  sku             text,
   brand           text,
   model           text,
   cost            numeric(12,2) not null default 0,
   price           numeric(12,2) not null default 0,
-  stock           int not null default 0,
   low             int not null default 0,
   warranty_months int not null default 0,
   image_url       text,
   notes           text,
+  status          text not null default 'active' check (status in ('active', 'draft')),
   created_by      bigint references users(id) on delete set null,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
+-- SKU unique only when present (drafts may have none).
+create unique index if not exists uniq_products_sku on products(sku) where sku is not null;
 
 create table if not exists product_serials (
   id         bigint generated always as identity primary key,
   product_id bigint not null references products(id) on delete cascade,
   serial     text not null unique,
   status     text not null default 'in_stock' check (status in ('in_stock', 'sold', 'returned')),
-  sale_id    bigint -- FK added after sales table exists (see bottom)
+  sale_id    bigint, -- FK added after sales table exists (see bottom)
+  created_at timestamptz not null default now()
 );
 
 create table if not exists bundles (
@@ -122,7 +128,37 @@ begin
   end if;
 end $$;
 
+-- Converge databases migrated before the serials/drafts changes (no-ops on fresh).
+alter table products drop column if exists stock;
+alter table products add column if not exists status text not null default 'active';
+alter table products alter column sku drop not null;
+do $$
+begin
+  if exists (select 1 from pg_constraint where conname = 'products_sku_key') then
+    alter table products drop constraint products_sku_key;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'products_status_check') then
+    alter table products add constraint products_status_check check (status in ('active', 'draft'));
+  end if;
+end $$;
+alter table product_serials add column if not exists created_at timestamptz not null default now();
+
+-- Seed the default product categories (idempotent).
+insert into categories (name, slug, sort) values
+  ('การ์ดจอ', 'gpu', 1),
+  ('ซีพียู', 'cpu', 2),
+  ('เมนบอร์ด', 'mb', 3),
+  ('แรม', 'ram', 4),
+  ('หน่วยเก็บข้อมูล', 'ssd', 5),
+  ('พาวเวอร์', 'psu', 6),
+  ('จอแสดงผล', 'monitor', 7),
+  ('อุปกรณ์เสริม', 'peripheral', 8)
+on conflict (slug) do nothing;
+
 -- Helpful indexes.
 create index if not exists idx_products_category on products(category_id);
+create index if not exists idx_products_status   on products(status);
+create index if not exists idx_serials_product   on product_serials(product_id);
+create index if not exists idx_serials_status    on product_serials(status);
 create index if not exists idx_sale_items_sale   on sale_items(sale_id);
 create index if not exists idx_stock_mov_product on stock_movements(product_id);

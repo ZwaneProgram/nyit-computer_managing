@@ -17,11 +17,16 @@ Done so far in Phase 0:
 - **Postgres installed (Windows) + migrated** — DB `nyit` live, `server/.env` set. Auth flow verified end-to-end (needs-setup → register first → login → me → 2nd-account-blocked).
 - **Frontend login gate done:** `src/lib/api.ts` (fetch wrapper: `api` for auth, `http` for feature endpoints), `src/auth/AuthContext.tsx` (provider + `useAuth`), `src/views/LoginView.tsx` (Thai login / first-account-setup screen). App is gated in `App.tsx`; Topbar has a logout button; Sidebar shows the logged-in user. First account auto-creates when DB is empty (needs-setup), then auto-logs-in.
 
-**Next, in order:**
-1. **Wire Inventory** — replace mock `PRODUCTS` in `src/data/catalog.ts` with calls to `/api/products` via `http.get/post/put/del` (keep the `Product` shape in `src/types.ts`; note backend product fields are snake_case — map them). Then AddProduct → `POST /api/products`. **NOTE:** backend `category_id` is an int FK to a `categories` table that is currently empty — seed categories (the 8 in `CATEGORIES`) or adjust before wiring.
-2. Continue the Roadmap (bundles → sales → analytics → cross-cutting).
+**Inventory BACKEND is done + verified** (2026-06-03): categories CRUD (`/api/categories`), products CRUD with **derived stock** + draft `status` (`/api/products?status=active|draft|all`, `/api/products/:id` returns product+serials), per-unit serials (`POST /api/products/:id/serials`, `DELETE /api/serials/:id`), image upload (`POST /api/upload` → `/uploads/*`, multipart, 4MB, image-only). Vite proxies `/uploads` too. All smoke-tested via curl. See LOCKED decision #9 for the model.
 
-**Do not build features before the products data-layer wiring work.**
+**Next, in order (FRONTEND, the big "make it real" job — one module per pass):**
+1. **Inventory UI** — rewrite `src/data/catalog.ts` to fetch real data via `src/lib/api.ts` `http.*` (drop mock `PRODUCTS`/`CATEGORIES`; update `Product` type in `src/types.ts` to backend shape: snake_case-ish, `stock` derived, `cat`→`category_id`+`category_slug`, add `status`, `image_url`). Then:
+   - InventoryView: real list + filters; thumbnail = photo or "ไม่มีรูป".
+   - **Product detail view** (NEW): click a product → see all its serial units + add/remove serials.
+   - AddProductView: real `POST /api/products` (+ serial entry, photo upload via `/api/upload`, `บันทึกแบบร่าง` → status draft). Wire edit (PUT).
+   - **Categories management** page/section (NEW) — CRUD.
+   - **Drafts** page (NEW) — list `status=draft`.
+2. Then Bundles → Sales (atomic checkout flips serials to sold) → Dashboard/Analytics (real SQL aggregations) → Settings/cleanup.
 
 To run dev: backend `cd server && npm run dev` (:3000), frontend `npm run dev` (:5173). Empty DB → app shows "create first account".
 
@@ -80,6 +85,12 @@ server/                    backend (Fastify + Postgres)
 6. **Security: light by design** (human's call — "just stock, no business secrets"). Still: hash passwords, don't expose secrets/DB creds in the frontend, keep JWT cookie httpOnly.
 7. **Image storage:** local `uploads/` folder on the VPS, served by Caddy. (Dev: same folder locally.)
 8. **Cost target near-free** — only real cost is the domain (~$10/yr). Language: **Thai UI**. Mobile responsive. Keep modular; avoid unnecessary complexity.
+9. **Inventory model (decided 2026-06-03):**
+   - **Full per-unit serial tracking.** A `products` row is a *model* (e.g. "RTX 5070"); each physical unit is a `product_serials` row with its own serial. **Stock is derived = count of `in_stock` serials** (the `products.stock` column was dropped). Clicking a product shows all its units/serials. Adding stock = adding serials.
+   - **Categories are user-editable** (CRUD) — get their own management section. 8 defaults seeded (gpu/cpu/mb/ram/ssd/psu/monitor/peripheral).
+   - **Product photos:** real upload (`POST /api/upload` → `server/uploads/`, served at `/uploads/*`). No photo → UI shows "ไม่มีรูป" text (not the old category-abbreviation thumbnail).
+   - **Drafts kept:** products have `status` `active|draft`; drafts may omit SKU; they get their own **Drafts page**. (`บันทึกแบบร่าง` stays.)
+   - **Removed:** the `สร้างใบสั่งซื้อ` / `สั่งเพิ่ม` purchase-order buttons (POs remain YAGNI), and the global topbar search.
 
 ---
 
@@ -90,8 +101,9 @@ server/                    backend (Fastify + Postgres)
 `stock_movements` · `shop_settings` (singleton). Later/optional: `customers`, `suppliers`, `purchase_orders`.
 
 **Behavior to implement (not just tables):**
-- A sale must **deduct stock**, write `stock_movements`, and flip matching `product_serials` to `sold` — do it in a single transaction (a Postgres function/RPC or a `BEGIN/COMMIT` in the API) so it's atomic.
-- Low-stock alerts = `products` where `stock <= low`.
+- **Stock is derived**, not stored: `count(product_serials where status='in_stock')` per product (queries already compute this as `stock`).
+- A sale must flip matching `product_serials` to `sold` (which lowers derived stock) and write `stock_movements` — in a single transaction (`BEGIN/COMMIT`) so it's atomic.
+- Low-stock alerts = products where `derived_stock <= low`.
 - Analytics = SQL aggregations over `sales`/`sale_items`/`stock_movements` (replaces the hard-coded numbers).
 
 ---
@@ -121,6 +133,7 @@ server/                    backend (Fastify + Postgres)
 
 ## Progress log (newest first)
 
+- **2026-06-03 (Claude):** Kicked off the "make it all real" job. Removed global topbar search. Locked the **inventory model** with the human (full per-unit serials, editable categories, real photos, drafts kept, PO buttons removed — LOCKED #9). Reworked `schema.sql` (products: dropped stored `stock`, `sku` nullable, added `status` active/draft + partial unique sku; `product_serials.created_at`; seeded 8 categories; idempotent ALTERs to converge the dev DB). Added deps `@fastify/multipart` + `@fastify/static`. Built backend: `routes/categories.ts` (CRUD), rewrote `routes/products.ts` (derived stock, draft status filter, serials add/remove, product+serials detail), `routes/uploads.ts` (image upload). Registered all in `index.ts`; Vite proxies `/uploads`. Smoke-tested the whole surface via curl (create w/ serials, derived stock, dup-serial 409, draft no-sku, upload 201 + static serve 200), then cleared test data. **Stopped at:** frontend Inventory UI (see CURRENT NEXT STEP step 1).
 - **2026-06-03 (Claude):** Human installed Postgres (Windows) + created DB `nyit` + set `server/.env`; migrate ran clean. Added `GET /api/auth/needs-setup`. Built the **frontend login gate**: `src/lib/api.ts` (fetch wrapper, `credentials:'include'`, `api` + `http`), `src/auth/AuthContext.tsx` (`AuthProvider`/`useAuth`), `src/views/LoginView.tsx` (Thai login + first-account-setup). Gated `App.tsx` (loading → login → shell), added logout to Topbar + real user in Sidebar, `lock`/`logout` icons, `.auth` styles. Verified the whole auth flow live (curl) then truncated `users` so first-run UX is clean. Both typechecks pass. **Stopped at:** next code task = wire the products data layer (seed categories first — see CURRENT NEXT STEP).
 - **2026-06-01 (Claude):** Locked hosting/DB decisions (Full VPS on Contabo, native Postgres, no Docker, Fastify, single-role auth w/ multi-account). Scaffolded `server/` (Fastify + pg + auth + products/categories + schema + migrate) and added the Vite `/api` proxy. **Stopped at:** human to install Postgres + run migrate; next code task = frontend login gate, then wire the products data layer.
 - **2026-06-01 (Codex):** Reopened backend decision after learning the owner has a Contabo VPS reached via FileZilla; documented VPS-vs-managed trade-offs; pointed `CLAUDE.md` at this file.
