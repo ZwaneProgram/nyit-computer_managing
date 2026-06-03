@@ -10,6 +10,7 @@ import { CategoriesView } from './views/CategoriesView';
 import { BundlesView } from './views/BundlesView';
 import { SalesView } from './views/SalesView';
 import { AnalyticsView } from './views/AnalyticsView';
+import { SettingsView } from './views/SettingsView';
 import { LoginView } from './views/LoginView';
 import { useTheme } from './hooks/useTheme';
 import { useMediaQuery } from './hooks/useMediaQuery';
@@ -57,7 +58,11 @@ export default function App() {
     };
   }, [drawerOpen]);
 
-  const cur = NAV.find((n) => n.id === view) ?? NAV[0];
+  const cur =
+    NAV.find((n) => n.id === view) ??
+    (view === 'settings'
+      ? { titleTH: 'ตั้งค่าระบบ', crumb: 'ระบบ / ตั้งค่า' }
+      : NAV[0]);
 
   const renderView = () => {
     switch (view) {
@@ -68,6 +73,7 @@ export default function App() {
       case 'bundles': return <BundlesView showToast={showToast} />;
       case 'sales': return <SalesView showToast={showToast} />;
       case 'analytics': return <AnalyticsView />;
+      case 'settings': return <SettingsView showToast={showToast} />;
       default: return null;
     }
   };

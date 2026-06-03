@@ -10,6 +10,7 @@ interface User {
   id: number;
   username: string;
   full_name: string | null;
+  role: 'owner' | 'staff';
 }
 
 const secret = () => process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
@@ -21,8 +22,12 @@ export async function currentUser(req: FastifyRequest): Promise<User | null> {
   if (!token) return null;
   try {
     const { uid } = jwt.verify(token, secret()) as { uid: number };
-    const { rows } = await query<User>('select id, username, full_name from users where id = $1', [uid]);
-    return rows[0] ?? null;
+    const { rows } = await query<User>('select id, username, full_name, role from users where id = $1', [uid]);
+    const u = rows[0];
+    if (!u) return null;
+    // pg returns bigint as a string; normalise id to a real number so === checks work.
+    u.id = Number(u.id);
+    return u;
   } catch {
     return null;
   }
@@ -37,9 +42,20 @@ export function requireAuth() {
   };
 }
 
+/** preHandler guard: like requireAuth but also requires the owner role. */
+export function requireOwner() {
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    const me = await currentUser(req);
+    if (!me) return reply.code(401).send({ error: 'unauthorized' });
+    if (me.role !== 'owner') return reply.code(403).send({ error: 'เฉพาะเจ้าของร้านเท่านั้น' });
+    req.user = me;
+  };
+}
+
 export async function authRoutes(app: FastifyInstance) {
-  // Register. The FIRST account (empty users table) is open so the shop can
-  // bootstrap; after that, creating accounts requires being logged in.
+  // Register the FIRST account only (empty users table) so the shop can
+  // bootstrap; that account becomes the owner. After that, accounts are created
+  // by the owner via the account-management endpoints (POST /api/users).
   app.post('/api/auth/register', async (req, reply) => {
     const { username, password, full_name } = (req.body ?? {}) as Record<string, string>;
     if (!username || !password) {
@@ -47,15 +63,14 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const { rows: countRows } = await query<{ n: number }>('select count(*)::int as n from users');
-    const isFirstAccount = countRows[0].n === 0;
-    if (!isFirstAccount && !(await currentUser(req))) {
-      return reply.code(401).send({ error: 'ต้องเข้าสู่ระบบก่อนจึงจะสร้างบัญชีใหม่ได้' });
+    if (countRows[0].n !== 0) {
+      return reply.code(403).send({ error: 'มีบัญชีอยู่แล้ว — ให้เจ้าของร้านเพิ่มบัญชีในหน้าตั้งค่า' });
     }
 
     const password_hash = await bcrypt.hash(password, 10);
     try {
       const { rows } = await query<User>(
-        'insert into users (username, password_hash, full_name) values ($1, $2, $3) returning id, username, full_name',
+        "insert into users (username, password_hash, full_name, role) values ($1, $2, $3, 'owner') returning id, username, full_name, role",
         [username, password_hash, full_name ?? null],
       );
       return reply.code(201).send({ user: rows[0] });
@@ -70,7 +85,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post('/api/auth/login', async (req, reply) => {
     const { username, password } = (req.body ?? {}) as Record<string, string>;
     const { rows } = await query<User & { password_hash: string }>(
-      'select id, username, full_name, password_hash from users where username = $1',
+      'select id, username, full_name, role, password_hash from users where username = $1',
       [username],
     );
     const u = rows[0];
@@ -83,7 +98,7 @@ export async function authRoutes(app: FastifyInstance) {
       path: '/',
       maxAge: MAX_AGE,
     });
-    return reply.send({ user: { id: u.id, username: u.username, full_name: u.full_name } });
+    return reply.send({ user: { id: u.id, username: u.username, full_name: u.full_name, role: u.role } });
   });
 
   app.post('/api/auth/logout', async (_req, reply) => {

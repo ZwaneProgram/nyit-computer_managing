@@ -5,6 +5,7 @@ export interface ApiUser {
   id: number;
   username: string;
   full_name: string | null;
+  role: 'owner' | 'staff';
 }
 
 /** Error carrying the HTTP status + the server's Thai error message. */

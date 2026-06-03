@@ -11,6 +11,7 @@ import {
   type ProductInput,
   type ProductStatus,
 } from '../data/inventory';
+import { fetchSettings } from '../data/settings';
 import { ApiError } from '../lib/api';
 import type { ViewId } from '../types';
 
@@ -58,6 +59,14 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
         if (!isEdit) setForm((f) => (f.category_id === '' && c[0] ? { ...f, category_id: c[0].id } : f));
       })
       .catch(() => setError('โหลดหมวดหมู่ไม่สำเร็จ'));
+  }, [isEdit]);
+
+  // Create mode: seed the reorder point from the shop's default threshold.
+  useEffect(() => {
+    if (isEdit) return;
+    fetchSettings()
+      .then((s) => setForm((f) => ({ ...f, low: String(s.default_low) })))
+      .catch(() => { /* keep the hard default */ });
   }, [isEdit]);
 
   // Edit mode: load the product and prefill the form.

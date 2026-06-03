@@ -9,4 +9,5 @@ export type ViewId =
   | 'categories'
   | 'bundles'
   | 'sales'
-  | 'analytics';
+  | 'analytics'
+  | 'settings';

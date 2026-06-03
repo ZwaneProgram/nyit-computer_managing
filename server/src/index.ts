@@ -11,6 +11,8 @@ import { bundleRoutes } from './routes/bundles';
 import { saleRoutes } from './routes/sales';
 import { statsRoutes } from './routes/stats';
 import { uploadRoutes, UPLOAD_DIR } from './routes/uploads';
+import { userRoutes } from './routes/users';
+import { settingsRoutes } from './routes/settings';
 
 const app = Fastify({ logger: true });
 
@@ -30,6 +32,8 @@ await app.register(bundleRoutes);
 await app.register(saleRoutes);
 await app.register(statsRoutes);
 await app.register(uploadRoutes);
+await app.register(userRoutes);
+await app.register(settingsRoutes);
 
 const port = Number(process.env.PORT || 3000);
 app

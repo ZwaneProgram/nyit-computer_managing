@@ -7,6 +7,7 @@ create table if not exists users (
   username      text not null unique,
   password_hash text not null,
   full_name     text,
+  role          text not null default 'staff' check (role in ('owner', 'staff')),
   created_at    timestamptz not null default now()
 );
 
@@ -142,6 +143,20 @@ begin
   end if;
 end $$;
 alter table product_serials add column if not exists created_at timestamptz not null default now();
+
+-- Account roles (added 2026-06-03): owner manages accounts + settings, staff
+-- just uses the shop. Converge older DBs: add the column, then make sure there
+-- is at least one owner by promoting the earliest-created account.
+alter table users add column if not exists role text not null default 'staff';
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'users_role_check') then
+    alter table users add constraint users_role_check check (role in ('owner', 'staff'));
+  end if;
+end $$;
+update users set role = 'owner'
+ where id = (select id from users order by id limit 1)
+   and not exists (select 1 from users where role = 'owner');
 
 -- Seed the default product categories (idempotent).
 insert into categories (name, slug, sort) values

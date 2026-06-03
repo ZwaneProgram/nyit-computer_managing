@@ -76,7 +76,11 @@ export function Sidebar({ active, onNav, user, open = false, onClose }: SidebarP
         ))}
 
         <div className="sb-section">ตั้งค่า</div>
-        <button className="sb-item">
+        <button
+          className="sb-item"
+          data-active={active === 'settings'}
+          onClick={() => onNav('settings')}
+        >
           <Icons.settings className="sb-item-icon" />
           <span>ตั้งค่าระบบ</span>
         </button>
