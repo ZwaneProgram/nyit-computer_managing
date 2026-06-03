@@ -51,7 +51,7 @@ export default function App() {
   const renderView = () => {
     switch (view) {
       case 'dashboard': return <DashboardView onNav={navigate} />;
-      case 'inventory': return <InventoryView onNav={navigate} />;
+      case 'inventory': return <InventoryView onNav={navigate} showToast={showToast} />;
       case 'add-product': return <AddProductView onNav={navigate} showToast={showToast} />;
       case 'bundles': return <BundlesView showToast={showToast} />;
       case 'sales': return <SalesView showToast={showToast} />;

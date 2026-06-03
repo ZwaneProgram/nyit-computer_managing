@@ -1,153 +1,236 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Icons } from '../components/Icons';
-import { CATEGORIES, categoryName } from '../data/catalog';
 import { fmtTHB } from '../data/format';
-import type { CategoryId, ViewId } from '../types';
+import {
+  createProduct,
+  fetchCategories,
+  uploadImage,
+  type Category,
+  type ProductInput,
+  type ProductStatus,
+} from '../data/inventory';
+import { ApiError } from '../lib/api';
+import type { ViewId } from '../types';
 
 interface ViewProps {
   onNav: (id: ViewId) => void;
   showToast: (msg: string) => void;
 }
 
-interface FormState {
-  cat: Exclude<CategoryId, 'all'>;
-  sku: string;
-  serial: string;
-  name: string;
-  cost: string;
-  price: string;
-  model: string;
-  warranty: string;
-  notes: string;
-  staff: string;
-  date: string;
-}
+const WARRANTIES = ['0', '12', '24', '36', '60', '84'];
 
 export function AddProductView({ onNav, showToast }: ViewProps) {
-  const [form, setForm] = useState<FormState>({
-    cat: 'gpu', sku: '', serial: '', name: '', cost: '', price: '',
-    model: '', warranty: '36', notes: '', staff: 'กรกฎ จันทร์เกษม', date: '2026-05-26',
+  const [cats, setCats] = useState<Category[]>([]);
+  const [form, setForm] = useState({
+    category_id: '' as number | '',
+    name: '', sku: '', brand: '', model: '',
+    cost: '', price: '', low: '5', warranty: '36', notes: '',
   });
-  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [serials, setSerials] = useState<string[]>([]);
+  const [serialInput, setSerialInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchCategories()
+      .then((c) => {
+        setCats(c);
+        setForm((f) => (f.category_id === '' && c[0] ? { ...f, category_id: c[0].id } : f));
+      })
+      .catch(() => setError('โหลดหมวดหมู่ไม่สำเร็จ'));
+  }, []);
+
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
+    setForm((f) => ({ ...f, [k]: v }));
 
   const cost = Number(form.cost);
   const price = Number(form.price);
   const profit = form.cost && form.price ? price - cost : 0;
-  const margin = form.cost && form.price ? ((price - cost) / price) * 100 : 0;
+  const margin = form.cost && form.price && price ? ((price - cost) / price) * 100 : 0;
 
-  const handleSubmit = (e: FormEvent) => {
+  const addSerial = () => {
+    const v = serialInput.trim();
+    if (!v) return;
+    if (serials.some((s) => s.toLowerCase() === v.toLowerCase())) {
+      setSerialInput('');
+      return;
+    }
+    setSerials((s) => [...s, v]);
+    setSerialInput('');
+  };
+
+  const onPickImage = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      setImageUrl(await uploadImage(file));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const save = async (status: ProductStatus) => {
+    setError(null);
+    if (!form.name.trim()) return setError('กรุณากรอกชื่อสินค้า');
+    if (status === 'active' && !form.sku.trim()) {
+      return setError('สินค้าที่บันทึกต้องมี SKU (หรือกด "บันทึกแบบร่าง")');
+    }
+    const input: ProductInput = {
+      category_id: form.category_id === '' ? null : Number(form.category_id),
+      name: form.name.trim(),
+      sku: form.sku.trim() || null,
+      brand: form.brand.trim() || null,
+      model: form.model.trim() || null,
+      cost: Number(form.cost) || 0,
+      price: Number(form.price) || 0,
+      low: Number(form.low) || 0,
+      warranty_months: Number(form.warranty) || 0,
+      image_url: imageUrl,
+      notes: form.notes.trim() || null,
+      status,
+      serials,
+    };
+    setBusy(true);
+    try {
+      await createProduct(input);
+      showToast(status === 'draft' ? 'บันทึกแบบร่างแล้ว' : 'บันทึกสินค้าใหม่เรียบร้อย');
+      onNav('inventory');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'บันทึกไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    showToast('บันทึกสินค้าใหม่เรียบร้อย');
-    setTimeout(() => onNav('inventory'), 600);
+    save('active');
   };
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={onSubmit}>
       <div className="page-head" style={{ marginBottom: 22 }}>
         <div>
           <button type="button" className="btn btn-sm btn-ghost" onClick={() => onNav('inventory')} style={{ marginBottom: 8 }}>← กลับไปคลังสินค้า</button>
           <div className="page-title">เพิ่มสินค้าใหม่</div>
-          <div className="muted page-subtitle">กรอกข้อมูลสินค้าและตั้งราคาขาย</div>
+          <div className="muted page-subtitle">กรอกข้อมูลสินค้า เพิ่ม Serial Number ของแต่ละเครื่อง และตั้งราคาขาย</div>
         </div>
         <div className="page-head-actions">
-          <button type="button" className="btn">บันทึกเป็นแบบร่าง</button>
-          <button type="submit" className="btn btn-primary"><Icons.check /> บันทึกสินค้า</button>
+          <button type="button" className="btn" disabled={busy} onClick={() => save('draft')}>บันทึกแบบร่าง</button>
+          <button type="submit" className="btn btn-primary" disabled={busy}><Icons.check /> {busy ? 'กำลังบันทึก...' : 'บันทึกสินค้า'}</button>
         </div>
       </div>
+
+      {error && (
+        <div className="auth-error" role="alert" style={{ marginBottom: 16 }}>
+          <Icons.warning style={{ width: 15, height: 15, flexShrink: 0 }} /><span>{error}</span>
+        </div>
+      )}
 
       <div className="grid grid-12">
         <div className="col-8 grid" style={{ gap: 'var(--gap)' }}>
           <div className="card card-pad">
-            <div className="section-h">
-              <div><h3>ข้อมูลพื้นฐาน</h3><div className="muted section-sub">ชื่อสินค้าและการจัดหมวด</div></div>
-            </div>
+            <div className="section-h"><div><h3>ข้อมูลพื้นฐาน</h3><div className="muted section-sub">ชื่อสินค้าและการจัดหมวด</div></div></div>
             <div className="form-grid-2">
               <div className="field" style={{ gridColumn: '1 / -1' }}>
                 <label className="field-label">ชื่อสินค้า *</label>
-                <input className="input" placeholder="เช่น ASUS ROG Strix RTX 4080 Super" value={form.name} onChange={(e) => set('name', e.target.value)} required />
+                <input className="input" placeholder="เช่น ASUS ROG Strix RTX 5070" value={form.name} onChange={(e) => set('name', e.target.value)} />
               </div>
               <div className="field">
-                <label className="field-label">หมวดหมู่ *</label>
-                <select className="select" value={form.cat} onChange={(e) => set('cat', e.target.value as FormState['cat'])}>
-                  {CATEGORIES.filter((c) => c.id !== 'all').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <label className="field-label">หมวดหมู่</label>
+                <select className="select" value={form.category_id} onChange={(e) => set('category_id', e.target.value === '' ? '' : Number(e.target.value))}>
+                  <option value="">— ไม่ระบุ —</option>
+                  {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div className="field">
+                <label className="field-label">ยี่ห้อ</label>
+                <input className="input" placeholder="เช่น ASUS" value={form.brand} onChange={(e) => set('brand', e.target.value)} />
+              </div>
+              <div className="field">
                 <label className="field-label">รุ่น / โมเดล</label>
-                <input className="input" placeholder="เช่น 4080S-O16G-GAMING" value={form.model} onChange={(e) => set('model', e.target.value)} />
+                <input className="input" placeholder="เช่น RTX5070-O12G-GAMING" value={form.model} onChange={(e) => set('model', e.target.value)} />
               </div>
               <div className="field">
                 <label className="field-label">SKU *</label>
                 <div className="input-prefix">
                   <span className="pfx mono" style={{ fontSize: 12 }}>SKU</span>
-                  <input className="input mono" placeholder="GPU-RTX4080S-ROG" value={form.sku} onChange={(e) => set('sku', e.target.value)} required />
-                </div>
-              </div>
-              <div className="field">
-                <label className="field-label">Serial Number</label>
-                <div className="input-prefix">
-                  <span className="pfx"><Icons.qr /></span>
-                  <input className="input mono" placeholder="SN-XXXX-0000" value={form.serial} onChange={(e) => set('serial', e.target.value)} />
+                  <input className="input mono" placeholder="GPU-RTX5070-ROG" value={form.sku} onChange={(e) => set('sku', e.target.value)} />
                 </div>
               </div>
             </div>
           </div>
 
           <div className="card card-pad">
-            <div className="section-h">
-              <div><h3>ราคาและกำไร</h3><div className="muted section-sub">ระบบจะคำนวณกำไรอัตโนมัติ</div></div>
-            </div>
+            <div className="section-h"><div><h3>ราคาและกำไร</h3><div className="muted section-sub">ระบบจะคำนวณกำไรอัตโนมัติ</div></div></div>
             <div className="form-grid-3">
               <div className="field">
-                <label className="field-label">ราคาทุน (บาท) *</label>
-                <div className="input-prefix">
-                  <span className="pfx">฿</span>
-                  <input className="input num" type="number" placeholder="0" value={form.cost} onChange={(e) => set('cost', e.target.value)} required />
-                </div>
+                <label className="field-label">ราคาทุน (บาท)</label>
+                <div className="input-prefix"><span className="pfx">฿</span>
+                  <input className="input num" type="number" placeholder="0" value={form.cost} onChange={(e) => set('cost', e.target.value)} /></div>
               </div>
               <div className="field">
-                <label className="field-label">ราคาขาย (บาท) *</label>
-                <div className="input-prefix">
-                  <span className="pfx">฿</span>
-                  <input className="input num" type="number" placeholder="0" value={form.price} onChange={(e) => set('price', e.target.value)} required />
-                </div>
+                <label className="field-label">ราคาขาย (บาท)</label>
+                <div className="input-prefix"><span className="pfx">฿</span>
+                  <input className="input num" type="number" placeholder="0" value={form.price} onChange={(e) => set('price', e.target.value)} /></div>
               </div>
               <div className="field">
                 <label className="field-label">รับประกัน (เดือน)</label>
                 <select className="select" value={form.warranty} onChange={(e) => set('warranty', e.target.value)}>
-                  {['12', '24', '36', '60', '84'].map((m) => <option key={m} value={m}>{m} เดือน</option>)}
+                  {WARRANTIES.map((m) => <option key={m} value={m}>{m === '0' ? 'ไม่มี' : `${m} เดือน`}</option>)}
                 </select>
               </div>
             </div>
             <div className="profit-strip">
-              <div>
-                <div className="muted" style={{ fontSize: 11.5 }}>กำไรต่อชิ้น</div>
-                <div className="num" style={{ fontSize: 18, fontWeight: 600, marginTop: 2, color: profit > 0 ? 'var(--pos)' : 'var(--ink-3)' }}>{fmtTHB(profit)}</div>
-              </div>
+              <div><div className="muted" style={{ fontSize: 11.5 }}>กำไรต่อชิ้น</div>
+                <div className="num" style={{ fontSize: 18, fontWeight: 600, marginTop: 2, color: profit > 0 ? 'var(--pos)' : 'var(--ink-3)' }}>{fmtTHB(profit)}</div></div>
               <div className="profit-divider" />
-              <div>
-                <div className="muted" style={{ fontSize: 11.5 }}>อัตรากำไร</div>
-                <div className="num" style={{ fontSize: 18, fontWeight: 600, marginTop: 2, color: profit > 0 ? 'var(--pos)' : 'var(--ink-3)' }}>{margin.toFixed(1)}%</div>
-              </div>
+              <div><div className="muted" style={{ fontSize: 11.5 }}>อัตรากำไร</div>
+                <div className="num" style={{ fontSize: 18, fontWeight: 600, marginTop: 2, color: profit > 0 ? 'var(--pos)' : 'var(--ink-3)' }}>{margin.toFixed(1)}%</div></div>
             </div>
+          </div>
+
+          <div className="card card-pad">
+            <div className="section-h"><div><h3>Serial Number ของแต่ละเครื่อง</h3><div className="muted section-sub">สต๊อก = จำนวน serial ที่เพิ่ม ({serials.length} เครื่อง)</div></div></div>
+            <div className="field">
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="input mono"
+                  placeholder="พิมพ์ Serial Number แล้วกด Enter หรือ เพิ่ม"
+                  value={serialInput}
+                  onChange={(e) => setSerialInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSerial(); } }}
+                />
+                <button type="button" className="btn" onClick={addSerial}><Icons.plus /> เพิ่ม</button>
+              </div>
+              <div className="field-hint">เพิ่มทีละเครื่อง — แต่ละ serial = 1 เครื่องในสต๊อก</div>
+            </div>
+            {serials.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                {serials.map((s) => (
+                  <span key={s} className="chip mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {s}
+                    <button type="button" className="chip-x" onClick={() => setSerials((arr) => arr.filter((x) => x !== s))} aria-label="ลบ">
+                      <Icons.x style={{ width: 11, height: 11 }} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="card card-pad">
             <div className="section-h"><div><h3>ข้อมูลเพิ่มเติม</h3></div></div>
             <div className="form-grid-2">
               <div className="field">
-                <label className="field-label">ผู้บันทึก</label>
-                <div className="input-prefix">
-                  <span className="pfx"><Icons.user /></span>
-                  <input className="input" value={form.staff} onChange={(e) => set('staff', e.target.value)} />
-                </div>
-              </div>
-              <div className="field">
-                <label className="field-label">วันที่รับเข้า</label>
-                <div className="input-prefix">
-                  <span className="pfx"><Icons.calendar /></span>
-                  <input className="input" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} />
-                </div>
+                <label className="field-label">จุดสั่งซื้อ (เตือนเมื่อเหลือน้อยกว่า)</label>
+                <input className="input num" type="number" placeholder="5" value={form.low} onChange={(e) => set('low', e.target.value)} />
               </div>
               <div className="field" style={{ gridColumn: '1 / -1' }}>
                 <label className="field-label">โน้ตเพิ่มเติม</label>
@@ -159,31 +242,36 @@ export function AddProductView({ onNav, showToast }: ViewProps) {
 
         <div className="col-4 grid" style={{ gap: 'var(--gap)' }}>
           <div className="card card-pad">
-            <div className="section-h">
-              <div><h3>รูปสินค้า</h3><div className="muted section-sub">PNG / JPG ขนาดไม่เกิน 4MB</div></div>
-            </div>
-            <label className="upload-drop">
-              <Icons.upload style={{ width: 24, height: 24 }} />
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>ลากไฟล์มาวาง หรือคลิกเพื่อเลือก</div>
-              <div className="mono" style={{ fontSize: 11 }}>product photo · 4:3</div>
-              <input type="file" accept="image/*" hidden />
-            </label>
-            <div className="hint-box">
-              <Icons.warning style={{ width: 14, height: 14, color: 'var(--accent)', marginTop: 1 }} />
-              <span>ใช้รูปพื้นหลังโปร่งใส หรือพื้นขาวจะดูสะอาดที่สุด</span>
-            </div>
+            <div className="section-h"><div><h3>รูปสินค้า</h3><div className="muted section-sub">PNG / JPG / WEBP ไม่เกิน 4MB</div></div></div>
+            {imageUrl ? (
+              <div style={{ position: 'relative' }}>
+                <img src={imageUrl} alt="ตัวอย่างสินค้า" style={{ width: '100%', borderRadius: 'var(--r-md)', display: 'block', aspectRatio: '4/3', objectFit: 'cover', background: 'var(--surface-sunk)' }} />
+                <button type="button" className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => { setImageUrl(null); if (fileRef.current) fileRef.current.value = ''; }}>
+                  <Icons.trash /> ลบรูป
+                </button>
+              </div>
+            ) : (
+              <label className="upload-drop">
+                <Icons.upload style={{ width: 24, height: 24 }} />
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>{uploading ? 'กำลังอัปโหลด...' : 'คลิกเพื่อเลือกรูป'}</div>
+                <div className="mono" style={{ fontSize: 11 }}>product photo · 4:3</div>
+                <input ref={fileRef} type="file" accept="image/*" hidden disabled={uploading} onChange={(e) => onPickImage(e.target.files?.[0])} />
+              </label>
+            )}
           </div>
 
           <div className="card card-pad">
             <div className="section-h"><div><h3>ตัวอย่าง</h3></div></div>
             <div className="product-cell" style={{ padding: '10px 0' }}>
-              <div className="thumb thumb-lg">{form.cat.toUpperCase()}</div>
+              <div className="thumb thumb-lg">
+                {imageUrl ? <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} /> : <span style={{ fontSize: 9 }}>ไม่มีรูป</span>}
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="product-cell-name" style={{ fontSize: 14 }}>{form.name || 'ชื่อสินค้า'}</div>
                 <div className="product-cell-meta">{form.sku || 'SKU-XXX'}</div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                  <span className="chip">{categoryName(form.cat)}</span>
-                  <span className="chip">รับประกัน {form.warranty} ด.</span>
+                  <span className="chip">{cats.find((c) => c.id === form.category_id)?.name ?? 'ไม่ระบุหมวด'}</span>
+                  <span className="chip">{serials.length} เครื่อง</span>
                 </div>
               </div>
             </div>
