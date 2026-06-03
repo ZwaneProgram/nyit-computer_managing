@@ -37,6 +37,8 @@ export function SettingsMenu({ theme, onSet }: SettingsMenuProps) {
     };
   }, [open]);
 
+  const densityIdx = Math.max(0, DENSITIES.findIndex((d) => d.value === theme.density));
+
   return (
     <div className="popover-host" ref={ref}>
       <button
@@ -67,16 +69,29 @@ export function SettingsMenu({ theme, onSet }: SettingsMenuProps) {
           </div>
 
           <div className="popover-section">ความหนาแน่นของแถว</div>
-          <div className="seg">
-            {DENSITIES.map((d) => (
-              <button
+          <input
+            type="range"
+            min={0}
+            max={DENSITIES.length - 1}
+            step={1}
+            value={densityIdx}
+            onChange={(e) => onSet('density', DENSITIES[Number(e.target.value)].value)}
+            className="density-slider"
+            aria-label="ความหนาแน่นของแถว"
+            style={{ width: '100%', accentColor: 'var(--accent)', cursor: 'pointer' }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+            {DENSITIES.map((d, i) => (
+              <span
                 key={d.value}
-                className="seg-btn"
-                data-active={theme.density === d.value}
-                onClick={() => onSet('density', d.value)}
+                style={{
+                  fontSize: 11,
+                  color: i === densityIdx ? 'var(--ink)' : 'var(--ink-3)',
+                  fontWeight: i === densityIdx ? 600 : 400,
+                }}
               >
                 {d.label}
-              </button>
+              </span>
             ))}
           </div>
         </div>
