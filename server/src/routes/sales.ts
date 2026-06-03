@@ -48,20 +48,55 @@ async function sellUnits(client: PoolClient, productId: number, need: number, sa
 export async function saleRoutes(app: FastifyInstance) {
   const guard = { preHandler: requireAuth() };
 
-  // History (newest first) with a human label + line count per sale.
-  app.get('/api/sales', guard, async () => {
+  // History (newest first) with optional date range, search, and pagination.
+  app.get('/api/sales', guard, async (req) => {
+    const qp = (req.query ?? {}) as Record<string, string | undefined>;
+    const from = qp.from && qp.from.trim() ? qp.from.trim() : null;
+    const to = qp.to && qp.to.trim() ? qp.to.trim() : null;
+    const search = qp.q && qp.q.trim() ? qp.q.trim() : null;
+    const limit = Math.min(100, Math.max(1, Number(qp.limit) || 25));
+    const offset = Math.max(0, Number(qp.offset) || 0);
+    const like = search ? `%${search}%` : null;
+
+    // Shared WHERE for both the count and the page query. $1..$4 = from,to,search,like.
+    const where = `
+      where ($1::date is null or s.created_at >= $1::date)
+        and ($2::date is null or s.created_at < ($2::date + interval '1 day'))
+        and ($3::text is null or s.id::text = $3 or s.customer_name ilike $4 or exists (
+              select 1 from sale_items si
+              left join products p on p.id = si.product_id
+              left join bundles bd on bd.id = si.bundle_id
+              where si.sale_id = s.id and (p.name ilike $4 or bd.name ilike $4)))`;
+    const filterParams = [from, to, search, like];
+
+    const { rows: countRows } = await query(
+      `select count(*)::int total from sales s ${where}`,
+      filterParams,
+    );
+    const total = (countRows[0] as Record<string, unknown>).total as number;
+
     const { rows: sales } = await query(
       `select s.*, u.full_name as staff_name, u.username as staff_username
          from sales s left join users u on u.id = s.staff_id
-        order by s.created_at desc`,
+         ${where}
+        order by s.created_at desc
+        limit $5 offset $6`,
+      [...filterParams, limit, offset],
     );
-    const { rows: items } = await query(
-      `select si.sale_id, si.qty, si.product_id, si.bundle_id,
-              p.name as product_name, bd.name as bundle_name
-         from sale_items si
-         left join products p on p.id = si.product_id
-         left join bundles bd on bd.id = si.bundle_id`,
-    );
+
+    const saleIds = (sales as Record<string, unknown>[]).map((s) => Number(s.id));
+    const { rows: items } = saleIds.length
+      ? await query(
+          `select si.sale_id, si.qty, si.product_id, si.bundle_id,
+                  p.name as product_name, bd.name as bundle_name
+             from sale_items si
+             left join products p on p.id = si.product_id
+             left join bundles bd on bd.id = si.bundle_id
+            where si.sale_id = any($1)`,
+          [saleIds],
+        )
+      : { rows: [] as Record<string, unknown>[] };
+
     const bySale = new Map<string, Record<string, unknown>[]>();
     for (const it of items as Record<string, unknown>[]) {
       const k = String(it.sale_id);
@@ -78,7 +113,7 @@ export async function saleRoutes(app: FastifyInstance) {
       }
       return { ...s, label, line_count: lines.length };
     });
-    return { sales: result };
+    return { sales: result, total };
   });
 
   // Atomic checkout.
