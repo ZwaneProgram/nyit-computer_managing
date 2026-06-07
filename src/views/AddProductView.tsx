@@ -187,11 +187,11 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
         </div>
       )}
 
-      <div className="grid grid-12">
-        <div className="col-8 grid" style={{ gap: 'var(--gap)' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-12">
+        <div className="col-span-12 lg:col-span-8 grid" style={{ gap: 'var(--gap)' }}>
           <div className="card card-pad">
             <div className="section-h"><div><h3>ข้อมูลพื้นฐาน</h3><div className="muted section-sub">ชื่อสินค้าและการจัดหมวด</div></div></div>
-            <div className="form-grid-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px]">
               <div className="field" style={{ gridColumn: '1 / -1' }}>
                 <label className="field-label">ชื่อสินค้า *</label>
                 <input className="input" placeholder="เช่น ASUS ROG Strix RTX 5070" value={form.name} onChange={(e) => set('name', e.target.value)} />
@@ -223,7 +223,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
 
           <div className="card card-pad">
             <div className="section-h"><div><h3>ราคาและกำไร</h3><div className="muted section-sub">ระบบจะคำนวณกำไรอัตโนมัติ</div></div></div>
-            <div className="form-grid-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[14px]">
               <div className="field">
                 <label className="field-label">ราคาทุน (บาท)</label>
                 <div className="input-prefix"><span className="pfx">฿</span>
@@ -294,7 +294,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
 
           <div className="card card-pad">
             <div className="section-h"><div><h3>ข้อมูลเพิ่มเติม</h3></div></div>
-            <div className="form-grid-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px]">
               <div className="field">
                 <label className="field-label">จุดสั่งซื้อ (เตือนเมื่อเหลือน้อยกว่า)</label>
                 <input className="input num" type="number" placeholder="5" value={form.low} onChange={(e) => set('low', e.target.value)} />
@@ -307,7 +307,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
           </div>
         </div>
 
-        <div className="col-4 grid" style={{ gap: 'var(--gap)' }}>
+        <div className="col-span-12 lg:col-span-4 grid" style={{ gap: 'var(--gap)' }}>
           <div className="card card-pad">
             <div className="section-h"><div><h3>รูปสินค้า</h3><div className="muted section-sub">PNG / JPG / WEBP ไม่เกิน 4MB</div></div></div>
             {imageUrl ? (

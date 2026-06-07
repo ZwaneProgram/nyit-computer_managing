@@ -75,7 +75,7 @@ export function AnalyticsView() {
         </div>
       </div>
 
-      <div className="grid grid-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {headline.map((k, i) => (
           <div key={i} className="card kpi" style={{ minHeight: 100 }}>
             <div className="kpi-label">{k.label}</div>
@@ -90,8 +90,8 @@ export function AnalyticsView() {
       </div>
 
       {tab === 'sales' && (
-        <div className="grid grid-12">
-          <div className="card col-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12">
+          <div className="card col-span-12 lg:col-span-8">
             <div className="card-pad">
               <div className="section-h"><div><h3>ยอดขายรายเดือน</h3><div className="muted section-sub">ช่วง: {rangeLabel}</div></div></div>
               <BarChart labels={m.labels} height={260} legend series={[
@@ -100,7 +100,7 @@ export function AnalyticsView() {
               ]} />
             </div>
           </div>
-          <div className="card col-4">
+          <div className="card col-span-12 lg:col-span-4">
             <div className="card-pad">
               <div className="section-h"><div><h3>สัดส่วนยอดขาย</h3><div className="muted section-sub">ตามหมวด</div></div></div>
               {donut.length ? (
@@ -117,19 +117,19 @@ export function AnalyticsView() {
             </div>
           </div>
 
-          <div className="card col-7">
+          <div className="card col-span-12 lg:col-span-7">
             <div className="card-pad">
               <div className="section-h"><div><h3>สินค้าขายดี 5 อันดับ</h3></div></div>
               <div className="table-wrap">
-                <table className="tbl" style={{ marginTop: -4 }}>
+                <table className="tbl tbl-cards" style={{ marginTop: -4 }}>
                   <thead><tr><th>สินค้า</th><th style={{ textAlign: 'right' }}>จำนวน</th><th style={{ textAlign: 'right' }}>ยอดขาย</th><th style={{ textAlign: 'right' }}>กำไร</th></tr></thead>
                   <tbody>
                     {stats.topProducts.map((r) => (
                       <tr key={r.id}>
-                        <td><div className="product-cell"><div className="thumb">{r.image_url ? <img src={r.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} /> : <span style={{ fontSize: 7, color: 'var(--ink-4)' }}>ไม่มีรูป</span>}</div><div><div className="product-cell-name">{r.name}</div><div className="product-cell-meta">{r.sku || '—'}</div></div></div></td>
-                        <td className="num" style={{ textAlign: 'right' }}>{r.qty}</td>
-                        <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(r.revenue)}</td>
-                        <td className="num" style={{ textAlign: 'right', color: 'var(--pos)' }}>+{fmtTHB(r.profit)}</td>
+                        <td className="cell-primary"><div className="product-cell"><div className="thumb">{r.image_url ? <img src={r.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} /> : <span style={{ fontSize: 7, color: 'var(--ink-4)' }}>ไม่มีรูป</span>}</div><div><div className="product-cell-name">{r.name}</div><div className="product-cell-meta">{r.sku || '—'}</div></div></div></td>
+                        <td className="num" data-label="จำนวน" style={{ textAlign: 'right' }}>{r.qty}</td>
+                        <td className="num" data-label="ยอดขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(r.revenue)}</td>
+                        <td className="num" data-label="กำไร" style={{ textAlign: 'right', color: 'var(--pos)' }}>+{fmtTHB(r.profit)}</td>
                       </tr>
                     ))}
                     {stats.topProducts.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24 }} className="muted">ยังไม่มีการขาย</td></tr>}
@@ -138,7 +138,7 @@ export function AnalyticsView() {
               </div>
             </div>
           </div>
-          <div className="card col-5">
+          <div className="card col-span-12 lg:col-span-5">
             <div className="card-pad">
               <div className="section-h"><div><h3>สรุปรายเดือน</h3></div></div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -166,8 +166,8 @@ export function AnalyticsView() {
       )}
 
       {tab === 'inventory' && (
-        <div className="grid grid-12">
-          <div className="card col-7">
+        <div className="grid grid-cols-1 lg:grid-cols-12">
+          <div className="card col-span-12 lg:col-span-7">
             <div className="card-pad">
               <div className="section-h"><div><h3>การเคลื่อนไหวสต๊อก</h3><div className="muted section-sub">นำเข้า vs ขายออก (จำนวนเครื่อง) 12 เดือน</div></div></div>
               <BarChart labels={stats.stockMovement.labels} height={240} legend series={[
@@ -176,7 +176,7 @@ export function AnalyticsView() {
               ]} />
             </div>
           </div>
-          <div className="card col-5">
+          <div className="card col-span-12 lg:col-span-5">
             <div className="card-pad">
               <div className="section-h"><div><h3>หมวดที่ขายดีที่สุด</h3><div className="muted section-sub">ตามจำนวนที่ขายได้</div></div></div>
               {stats.categoryUnits.length ? stats.categoryUnits.map((c, i) => (
@@ -197,16 +197,16 @@ export function AnalyticsView() {
         <div className="card card-pad">
           <div className="section-h"><div><h3>ประสิทธิภาพชุดสินค้า</h3></div></div>
           <div className="table-wrap">
-            <table className="tbl">
+            <table className="tbl tbl-cards">
               <thead><tr><th>ชุด</th><th style={{ textAlign: 'right' }}>ขายไป</th><th style={{ textAlign: 'right' }}>ยอดรวม</th><th style={{ textAlign: 'right' }}>กำไรรวม</th><th style={{ textAlign: 'right' }}>อัตรากำไร</th></tr></thead>
               <tbody>
                 {stats.bundlePerformance.map((b) => (
                   <tr key={b.id}>
-                    <td><div style={{ fontWeight: 500 }}>{b.name}</div><div className="muted mono" style={{ fontSize: 11.5 }}>{b.item_count} ชิ้น</div></td>
-                    <td className="num" style={{ textAlign: 'right' }}>{b.sold}</td>
-                    <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(b.revenue)}</td>
-                    <td className="num" style={{ textAlign: 'right', color: 'var(--pos)' }}>+{fmtTHB(b.profit)}</td>
-                    <td className="num" style={{ textAlign: 'right' }}>{b.margin}%</td>
+                    <td className="cell-primary"><div style={{ fontWeight: 500 }}>{b.name}</div><div className="muted mono" style={{ fontSize: 11.5 }}>{b.item_count} ชิ้น</div></td>
+                    <td className="num" data-label="ขายไป" style={{ textAlign: 'right' }}>{b.sold}</td>
+                    <td className="num" data-label="ยอดรวม" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(b.revenue)}</td>
+                    <td className="num" data-label="กำไรรวม" style={{ textAlign: 'right', color: 'var(--pos)' }}>+{fmtTHB(b.profit)}</td>
+                    <td className="num" data-label="อัตรากำไร" style={{ textAlign: 'right' }}>{b.margin}%</td>
                   </tr>
                 ))}
                 {stats.bundlePerformance.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24 }} className="muted">ยังไม่มีชุดสินค้า</td></tr>}

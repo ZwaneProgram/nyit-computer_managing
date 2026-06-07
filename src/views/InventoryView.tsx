@@ -346,8 +346,8 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
         </div>
       </div>
 
-      <div className="grid grid-12">
-        <div className="col-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12">
+        <div className="col-span-12 lg:col-span-4">
           <div className="card card-pad">
             <div style={{ aspectRatio: '4/3', borderRadius: 'var(--r-md)', overflow: 'hidden', background: 'var(--surface-sunk)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
               {product.image_url
@@ -366,7 +366,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
           </div>
         </div>
 
-        <div className="col-8">
+        <div className="col-span-12 lg:col-span-8">
           <div className="card card-pad">
             <div className="section-h">
               <div><h3>เครื่องในสต๊อก ({inStock})</h3><div className="muted section-sub">แต่ละ serial = 1 เครื่อง · รวมทั้งหมด {serials.length} รายการ</div></div>
@@ -380,15 +380,15 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
               </div>
             </div>
             <div className="table-wrap">
-              <table className="tbl">
+              <table className="tbl tbl-cards">
                 <thead><tr><th>Serial Number</th><th>สถานะ</th><th>เพิ่มเมื่อ</th><th style={{ width: 50 }} /></tr></thead>
                 <tbody>
                   {serials.map((s) => (
                     <tr key={s.id}>
-                      <td className="mono" style={{ fontSize: 12.5 }}>{s.serial}</td>
-                      <td>{serialStatusChip(s.status)}</td>
-                      <td><span className="muted" style={{ fontSize: 12.5 }}>{new Date(s.created_at).toLocaleDateString('th-TH')}</span></td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td className="cell-primary mono" style={{ fontSize: 12.5 }}>{s.serial}</td>
+                      <td data-label="สถานะ">{serialStatusChip(s.status)}</td>
+                      <td data-label="เพิ่มเมื่อ"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(s.created_at).toLocaleDateString('th-TH')}</span></td>
+                      <td className="cell-actions">
                         {s.status === 'in_stock'
                           ? <button className="btn btn-sm btn-icon btn-ghost" title="ลบเครื่องนี้" onClick={() => removeSerial(s)}><Icons.trash /></button>
                           : null}

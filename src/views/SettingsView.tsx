@@ -223,14 +223,14 @@ function AccountsCard({ showToast, fail }: { showToast: (m: string) => void; fai
       <div className="section-h"><div><h3>จัดการบัญชีผู้ใช้</h3><div className="muted section-sub">เจ้าของร้านเข้าถึงทุกอย่าง · พนักงานใช้งานร้านได้แต่จัดการบัญชีไม่ได้</div></div></div>
 
       <div className="table-wrap">
-        <table className="tbl">
+        <table className="tbl tbl-cards">
           <thead>
             <tr><th>ชื่อผู้ใช้</th><th>ชื่อ</th><th>สิทธิ์</th><th style={{ width: 150 }} /></tr>
           </thead>
           <tbody>
             {accounts.map((a) => (
               <tr key={a.id}>
-                <td>
+                <td className="cell-primary">
                   <span style={{ fontWeight: 500 }}>@{a.username}</span>
                   {a.id === user?.id && <span className="muted" style={{ fontSize: 11.5 }}> (คุณ)</span>}
                   {resetId === a.id && (
@@ -249,11 +249,11 @@ function AccountsCard({ showToast, fail }: { showToast: (m: string) => void; fai
                     </div>
                   )}
                 </td>
-                <td className="muted">{a.full_name || '—'}</td>
-                <td>
+                <td className="muted" data-label="ชื่อ">{a.full_name || '—'}</td>
+                <td data-label="สิทธิ์">
                   <span className="chip" style={{ fontSize: 11.5 }}>{a.role === 'owner' ? 'เจ้าของร้าน' : 'พนักงาน'}</span>
                 </td>
-                <td style={{ textAlign: 'right' }}>
+                <td className="cell-actions" style={{ textAlign: 'right' }}>
                   <div style={{ display: 'inline-flex', gap: 4 }}>
                     {a.id !== user?.id && (
                       <button className="btn btn-sm btn-icon btn-ghost" title="รีเซ็ตรหัสผ่าน" onClick={() => { setResetId(a.id); setResetPw(''); }}><Icons.lock /></button>

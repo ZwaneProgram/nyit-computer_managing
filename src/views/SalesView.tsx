@@ -245,8 +245,8 @@ export function SalesView({ showToast }: ViewProps) {
           </div>
         </div>
       ) : (
-        <div className="grid grid-12">
-          <div className="col-7 grid" style={{ gap: 'var(--gap)' }}>
+        <div className="grid grid-cols-1 lg:grid-cols-12">
+          <div className="col-span-12 lg:col-span-7 grid" style={{ gap: 'var(--gap)' }}>
             <div className="card card-pad">
               <div className="field-label" style={{ marginBottom: 8 }}>ประเภทการขาย</div>
               <div className="sale-type">
@@ -311,27 +311,27 @@ export function SalesView({ showToast }: ViewProps) {
                     </div>
                   )}
                   <div className="table-wrap" style={{ borderRadius: 0 }}>
-                    <table className="tbl">
+                    <table className="tbl tbl-cards">
                       <thead><tr><th>สินค้า</th><th style={{ textAlign: 'right', width: 110 }}>ราคา</th><th style={{ textAlign: 'center', width: 130 }}>จำนวน</th><th style={{ textAlign: 'right', width: 120 }}>ยอดรวม</th><th style={{ width: 40 }} /></tr></thead>
                       <tbody>
                         {itemLines.map((l) => (
                           <tr key={l.p.id}>
-                            <td>
+                            <td className="cell-primary">
                               <div className="product-cell">
                                 <Thumb url={l.p.image_url} />
                                 <div><div className="product-cell-name">{l.p.name}</div><div className="product-cell-meta">{l.p.sku || '—'} · คงเหลือ {l.p.stock}</div></div>
                               </div>
                             </td>
-                            <td className="num" style={{ textAlign: 'right' }}>{fmtTHB(l.p.price)}</td>
-                            <td>
+                            <td className="num" data-label="ราคา" style={{ textAlign: 'right' }}>{fmtTHB(l.p.price)}</td>
+                            <td data-label="จำนวน">
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                                 <button className="btn btn-sm btn-icon btn-ghost" onClick={() => setCart((is) => is.map((i) => (i.product_id === l.p.id ? { ...i, qty: Math.max(1, i.qty - 1) } : i)))}>−</button>
                                 <span className="num" style={{ minWidth: 24, textAlign: 'center', fontWeight: 600, color: l.qty > l.p.stock ? 'var(--neg)' : undefined }}>{l.qty}</span>
                                 <button className="btn btn-sm btn-icon btn-ghost" disabled={l.qty >= l.p.stock} onClick={() => setCart((is) => is.map((i) => (i.product_id === l.p.id ? { ...i, qty: i.qty + 1 } : i)))}>+</button>
                               </div>
                             </td>
-                            <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(l.p.price * l.qty)}</td>
-                            <td><button className="btn btn-sm btn-icon btn-ghost" onClick={() => setCart((is) => is.filter((i) => i.product_id !== l.p.id))}><Icons.trash /></button></td>
+                            <td className="num" data-label="ยอดรวม" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(l.p.price * l.qty)}</td>
+                            <td className="cell-actions"><button className="btn btn-sm btn-icon btn-ghost" onClick={() => setCart((is) => is.filter((i) => i.product_id !== l.p.id))}><Icons.trash /></button></td>
                           </tr>
                         ))}
                         {itemLines.length === 0 && (
@@ -346,7 +346,7 @@ export function SalesView({ showToast }: ViewProps) {
 
             <div className="card card-pad">
               <div className="section-h"><div><h3>ข้อมูลลูกค้า</h3><div className="muted section-sub">ไม่บังคับ — กรอกเพื่อบันทึกประวัติ</div></div></div>
-              <div className="form-grid-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px]">
                 <div className="field"><label className="field-label">ชื่อลูกค้า</label><input className="input" placeholder="คุณ..." value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} /></div>
                 <div className="field"><label className="field-label">เบอร์โทร</label><input className="input mono" placeholder="08X-XXX-XXXX" value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} /></div>
                 <div className="field" style={{ gridColumn: '1 / -1' }}><label className="field-label">ที่อยู่จัดส่ง</label><input className="input" placeholder="(ไม่ต้องระบุ ถ้ารับเองที่หน้าร้าน)" value={customer.address} onChange={(e) => setCustomer({ ...customer, address: e.target.value })} /></div>
@@ -355,7 +355,7 @@ export function SalesView({ showToast }: ViewProps) {
             </div>
           </div>
 
-          <div className="col-5">
+          <div className="col-span-12 lg:col-span-5">
             <div className="sticky-aside">
               <div className="card card-pad">
                 <div className="section-h"><div><h3>สรุปคำสั่งซื้อ</h3></div></div>

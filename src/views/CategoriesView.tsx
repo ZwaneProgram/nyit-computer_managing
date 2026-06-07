@@ -108,14 +108,14 @@ export function CategoriesView({ showToast }: ViewProps) {
       <div className="card card-pad" style={{ maxWidth: 640 }}>
         <div className="section-h"><div><h3>หมวดหมู่ทั้งหมด</h3><div className="muted section-sub">{cats.length} หมวด</div></div></div>
         <div className="table-wrap">
-          <table className="tbl">
+          <table className="tbl tbl-cards">
             <thead>
               <tr><th>ชื่อหมวดหมู่</th><th style={{ textAlign: 'right' }}>จำนวนสินค้า</th><th style={{ width: 90 }} /></tr>
             </thead>
             <tbody>
               {cats.map((c) => (
                 <tr key={c.id}>
-                  <td>
+                  <td className="cell-primary">
                     {editingId === c.id ? (
                       <input
                         className="input"
@@ -131,8 +131,8 @@ export function CategoriesView({ showToast }: ViewProps) {
                       <span style={{ fontWeight: 500 }}>{c.name}</span>
                     )}
                   </td>
-                  <td className="num muted" style={{ textAlign: 'right' }}>{c.product_count ?? 0}</td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td className="num muted" data-label="จำนวนสินค้า" style={{ textAlign: 'right' }}>{c.product_count ?? 0}</td>
+                  <td className="cell-actions">
                     <div style={{ display: 'inline-flex', gap: 4 }}>
                       {editingId === c.id ? (
                         <>

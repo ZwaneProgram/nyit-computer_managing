@@ -1,13 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
-// https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   server: {
-    host: true, // expose on LAN so the shop's phone/tablet can open it during dev
+    host: true,
     proxy: {
-      // Forward API calls + uploaded images to the Fastify backend during dev.
       '/api': 'http://localhost:3000',
       '/uploads': 'http://localhost:3000',
     },

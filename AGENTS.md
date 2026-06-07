@@ -36,15 +36,17 @@ To run dev: backend `cd server && npm run dev` (:3000), frontend `npm run dev` (
   - [ ] **pm2 boot-persistence** — confirm the app auto-starts after a reboot: `pm2 startup systemd -u root --hp /root` (run the line it prints), then `pm2 save`. Test with a reboot if possible.
   - [ ] **Nightly `pg_dump` backup cron** — `DEPLOY.md` §Backups: `( crontab -l 2>/dev/null; echo "0 2 * * * sudo -u postgres pg_dump nyit > /root/nyit-backup-\$(date +\%F).sql" ) | crontab -`. Confirm it's installed and producing files.
 
-- [ ] **6. Responsive + theming pass (started 2026-06-03, more later):**
+- [x] **6. Responsive + theming pass (completed 2026-06-07):**
   - [x] Fixed dense chart labels (`thinLabels` in `BarChart`/`AreaChart` → ~12 readable labels; the 30/90-day ranges were crushing 30–90 labels).
   - [x] Phone **card-view** (≤600px) for the **Inventory** list + **Sales history** tables (`tbl-cards` class + `data-label` per `td`); no more sideways scroll on phones.
   - [x] Bigger mobile tap targets (≈36px) for pagination, qty steppers, tabs, chips.
   - [x] Fixed dark-mode **unreadable black text**: `.product-pick` had no `color` so buttons used the UA default black → added `color: var(--ink)` (affected sale-type, bundle picker, product search cards).
   - [x] Fixed Sales-history **horizontal overflow** ("off the box"): the `pagn` had `table-flush` (−20px margins) inside a card with no padding → removed it.
   - [x] Row-density picker is now a **draggable slider** (was a 3-button segment).
-  - [ ] **Still scroll-not-carded on phones** (do later if wanted): Analytics top-products & bundle tables, Settings user list, the sales **cart**, serials table.
-  - [ ] **Cleanup:** unused `.seg`/`.seg-btn` CSS (density picker no longer uses it).
+  - [x] **Tailwind CSS v4 installed** (`@tailwindcss/vite`); breakpoints configured to match project breakpoints (sm:600 md:900 lg:1100 xl:1600); preflight coexists with existing CSS tokens — no theming changes.
+  - [x] All `.grid-4/.grid-3/.grid-2/.grid-12/.col-*/.form-grid-*` CSS layout classes replaced with Tailwind responsive utilities across DashboardView, AnalyticsView, SalesView, InventoryView (ProductDetail), AddProductView, BundlesView.
+  - [x] Remaining card-view tables done: Analytics top-products, Analytics bundle performance, Sales cart, Inventory serials, Dashboard low-stock, Settings user list.
+  - [x] Dead `.seg`/`.seg-btn` CSS removed.
 
 - **DEV DB = shared VPS Postgres via SSH tunnel.** Local `server/.env` `DATABASE_URL` → `localhost:5433`; user runs `ssh -N -L 5433:localhost:5432 -o ServerAliveInterval=30 root@194.233.88.142` and leaves it open (no tunnel ⇒ login/all data 500). **Image-upload gotcha:** DB is shared but `server/uploads/` is NOT — a file only exists on the machine that uploaded it. **Rule: upload product images on the LIVE site, not locally.** Local dev serves `/uploads/*` with a fallback: if a file isn't local and `UPLOADS_FALLBACK_URL` is set (DEV ONLY — never on the VPS), it 302s to the VPS. So local dev sees real images; locally-uploaded images won't show on the live site until re-uploaded there.
 

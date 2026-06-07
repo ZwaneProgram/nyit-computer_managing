@@ -1,3 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  /* Override Tailwind's default breakpoints to match this project's CSS media queries */
+  --breakpoint-sm: 600px;
+  --breakpoint-md: 900px;
+  --breakpoint-lg: 1100px;
+  --breakpoint-xl: 1600px;
+}
+
 /* ============================================================================
    Nyit Computer — global styles
    Design tokens + components ported from the Claude Design handoff, with a
@@ -203,7 +213,7 @@ input, select, textarea { font-family: inherit; }
 .search input { background: transparent; border: 0; outline: 0; flex: 1; min-width: 0; color: var(--ink); font-size: 13px; }
 .search kbd { font-family: var(--font-mono); font-size: 10.5px; padding: 1px 5px; border-radius: 4px; background: var(--surface-sunk); border: 1px solid var(--border); color: var(--ink-3); }
 
-.content { padding: 24px 28px 64px; max-width: 1480px; width: 100%; margin: 0 auto; }
+.content { padding: 24px 28px 64px; max-width: 1480px; width: 100%; margin: 0 auto; flex: 1; }
 
 /* ===== Page header (greeting / title row) ===== */
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
@@ -303,20 +313,6 @@ input, select, textarea { font-family: inherit; }
 
 /* Grids */
 .grid { display: grid; gap: var(--gap); }
-.grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.grid-12 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
-.col-8 { grid-column: span 8; }
-.col-7 { grid-column: span 7; }
-.col-5 { grid-column: span 5; }
-.col-4 { grid-column: span 4; }
-.col-6 { grid-column: span 6; }
-.col-12 { grid-column: span 12; }
-
-/* Form grids */
-.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
 
 /* Section header */
 .section-h { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
@@ -464,10 +460,6 @@ input, select, textarea { font-family: inherit; }
 .swatch-row { display: flex; gap: 8px; }
 .swatch { width: 30px; height: 30px; border-radius: 8px; border: 2px solid transparent; display: grid; place-items: center; color: #fff; cursor: pointer; }
 .swatch[data-active="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--surface) inset; }
-.seg { display: flex; background: var(--surface-sunk); border-radius: 8px; padding: 2px; }
-.seg-btn { flex: 1; height: 30px; border: 0; background: transparent; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
-.seg-btn[data-active="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-1); font-weight: 600; }
-
 /* Donut legend */
 .donut-label { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 6px 0; }
 .donut-label .sw { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
@@ -506,9 +498,6 @@ input, select, textarea { font-family: inherit; }
 
 /* Laptop / small desktop — collapse the 12-col splits */
 @media (max-width: 1100px) {
-  .grid-4 { grid-template-columns: repeat(2, 1fr); }
-  .grid-3 { grid-template-columns: repeat(2, 1fr); }
-  .col-8, .col-7, .col-5, .col-4, .col-6 { grid-column: span 12; }
   .sticky-aside { position: static; }
   .topbar-search { width: 200px; }
 }
@@ -551,8 +540,6 @@ input, select, textarea { font-family: inherit; }
 /* Phones */
 @media (max-width: 600px) {
   :root { --gap: 14px; }
-  .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
-  .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; }
   .sale-type { flex-direction: column; }
 
   .page-title { font-size: 19px; }

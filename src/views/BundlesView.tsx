@@ -131,7 +131,7 @@ export function BundlesView({ showToast }: ViewProps) {
         {error && <div className="muted" style={{ color: 'var(--neg)' }}>{error}</div>}
         {loading && <div className="muted" style={{ padding: 20 }}>กำลังโหลด...</div>}
 
-        <div className="grid grid-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {bundles.map((b) => {
             const off = b.list_price ? Math.round((1 - b.price / b.list_price) * 100) : 0;
             return (
@@ -194,8 +194,8 @@ export function BundlesView({ showToast }: ViewProps) {
         </div>
       </div>
 
-      <div className="grid grid-12">
-        <div className="col-7 grid" style={{ gap: 'var(--gap)' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-12">
+        <div className="col-span-12 lg:col-span-7 grid" style={{ gap: 'var(--gap)' }}>
           <div className="card card-pad">
             <div className="field">
               <label className="field-label">ชื่อชุดสินค้า *</label>
@@ -240,7 +240,7 @@ export function BundlesView({ showToast }: ViewProps) {
           </div>
         </div>
 
-        <div className="col-5">
+        <div className="col-span-12 lg:col-span-5">
           <div className="sticky-aside">
             <div className="card card-pad">
               <div className="section-h"><div><h3>สรุปชุดสินค้า</h3><div className="muted section-sub">{selected.length} ชิ้นในชุด</div></div></div>
