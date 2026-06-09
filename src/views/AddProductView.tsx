@@ -11,6 +11,7 @@ import {
   type ProductInput,
 } from '../data/inventory';
 import { fetchSettings } from '../data/settings';
+import { WARRANTY_PRESETS, isPresetWarranty } from '../data/warranty';
 import { ApiError } from '../lib/api';
 import type { ViewId } from '../types';
 
@@ -20,17 +21,6 @@ interface ViewProps {
   /** When set, the form edits this product instead of creating a new one. */
   editId?: number | null;
 }
-
-const WARRANTY_PRESETS = [
-  { v: '0', label: 'ไม่มี' },
-  { v: '3', label: '3 เดือน' },
-  { v: '6', label: '6 เดือน' },
-  { v: '12', label: '12 เดือน (1 ปี)' },
-  { v: '24', label: '24 เดือน (2 ปี)' },
-  { v: '36', label: '36 เดือน (3 ปี)' },
-  { v: '60', label: '60 เดือน (5 ปี)' },
-];
-const isPresetWarranty = (m: string) => WARRANTY_PRESETS.some((p) => p.v === m);
 
 /** One physical unit being entered. */
 interface UnitDraft {
@@ -61,7 +51,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
   const [cats, setCats] = useState<Category[]>([]);
   const [form, setForm] = useState({
     category_id: '' as number | '',
-    name: '', brand: '', model: '', low: '5', notes: '',
+    name: '', model: '', low: '5', notes: '',
   });
   const [units, setUnits] = useState<UnitDraft[]>([]);
   const [busy, setBusy] = useState(false);
@@ -92,7 +82,6 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
         setForm({
           category_id: product.category_id ?? '',
           name: product.name,
-          brand: product.brand ?? '',
           model: product.model ?? '',
           low: String(product.low),
           notes: product.notes ?? '',
@@ -126,7 +115,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
     const input: ProductInput = {
       category_id: form.category_id === '' ? null : Number(form.category_id),
       name: form.name.trim(),
-      brand: form.brand.trim() || null,
+      brand: null,
       model: form.model.trim() || null,
       low: Number(form.low) || 0,
       notes: form.notes.trim() || null,
@@ -205,10 +194,6 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
               </select>
             </div>
             <div className="field">
-              <label className="field-label">ยี่ห้อ</label>
-              <input className="input" placeholder="เช่น ASUS" value={form.brand} onChange={(e) => set('brand', e.target.value)} />
-            </div>
-            <div className="field">
               <label className="field-label">รุ่น / โมเดล</label>
               <input className="input" placeholder="เช่น RTX5090-O24G-GAMING" value={form.model} onChange={(e) => set('model', e.target.value)} />
             </div>
@@ -257,7 +242,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[14px]">
                       <div className="field">
                         <label className="field-label">Serial Number *</label>
-                        <input className="input mono" placeholder="SN-XXXX" value={u.serial} onChange={(e) => setUnit(i, { serial: e.target.value })} />
+                        <input className="input mono" placeholder="..." value={u.serial} onChange={(e) => setUnit(i, { serial: e.target.value })} />
                       </div>
                       <div className="field">
                         <label className="field-label">SKU (ไม่บังคับ)</label>
@@ -295,13 +280,13 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
                         <div className="num" style={{ fontSize: 17, fontWeight: 600, paddingTop: 6, color: profit > 0 ? 'var(--pos)' : 'var(--ink-3)' }}>{fmtTHB(profit)}</div>
                       </div>
                       <div className="field" style={{ gridColumn: '1 / -1' }}>
-                        <label className="field-label">โน้ต (เฉพาะเครื่องนี้)</label>
+                        <label className="field-label">โน้ต</label>
                         <input className="input" placeholder="เช่น กล่องบุบ, ของโชว์" value={u.note} onChange={(e) => setUnit(i, { note: e.target.value })} />
                       </div>
                       <div className="field" style={{ gridColumn: '1 / -1' }}>
                         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                           <input type="checkbox" checked={u.draft} onChange={(e) => setUnit(i, { draft: e.target.checked })} />
-                          <span className="field-label" style={{ margin: 0 }}>บันทึกเป็นแบบร่าง (ยังขายไม่ได้)</span>
+                          <span className="field-label" style={{ margin: 0 }}>บันทึกเป็นแบบร่าง</span>
                         </label>
                       </div>
                       <div className="field" style={{ gridColumn: '1 / -1' }}>
