@@ -61,15 +61,15 @@ export function BundlesView({ showToast }: ViewProps) {
     return m;
   }, [products]);
 
-  const cost = selected.reduce((s, id) => s + (productById.get(id)?.cost ?? 0), 0);
-  const listPrice = selected.reduce((s, id) => s + (productById.get(id)?.price ?? 0), 0);
+  const cost = selected.reduce((s, id) => s + (productById.get(id)?.cost_min ?? 0), 0);
+  const listPrice = selected.reduce((s, id) => s + (productById.get(id)?.price_min ?? 0), 0);
   const bundlePrice = Math.round(listPrice * (1 - discount / 100));
   const profit = bundlePrice - cost;
   const margin = bundlePrice ? (profit / bundlePrice) * 100 : 0;
 
   const visible = products.filter((p) => {
     if (filterCat !== 'all' && p.category_id !== filterCat) return false;
-    if (q && !p.name.toLowerCase().includes(q.toLowerCase()) && !(p.sku ?? '').toLowerCase().includes(q.toLowerCase())) return false;
+    if (q && !p.name.toLowerCase().includes(q.toLowerCase()) && !(p.brand ?? '').toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   });
 
@@ -225,12 +225,12 @@ export function BundlesView({ showToast }: ViewProps) {
                 return (
                   <button key={p.id} type="button" className={'product-pick' + (isSel ? ' selected' : '')}
                     onClick={() => setSelected((s) => (isSel ? s.filter((x) => x !== p.id) : [...s, p.id]))}>
-                    <Thumb url={p.image_url} />
+                    <Thumb url={null} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 500 }}>{p.name}</div>
-                      <div className="muted mono" style={{ fontSize: 11.5, marginTop: 1 }}>{p.sku || '—'} · คงเหลือ {p.stock}</div>
+                      <div className="muted mono" style={{ fontSize: 11.5, marginTop: 1 }}>{p.brand || '—'} · คงเหลือ {p.stock}</div>
                     </div>
-                    <div className="num" style={{ fontWeight: 600 }}>{fmtTHB(p.price)}</div>
+                    <div className="num" style={{ fontWeight: 600 }}>{p.price_min == null ? '—' : `${fmtTHB(p.price_min)}+`}</div>
                     <div className="pick-check" data-on={isSel}>{isSel && <Icons.check style={{ width: 12, height: 12 }} />}</div>
                   </button>
                 );
@@ -257,12 +257,12 @@ export function BundlesView({ showToast }: ViewProps) {
                     if (!p) return null;
                     return (
                       <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
-                        <Thumb url={p.image_url} />
+                        <Thumb url={null} />
                         <div style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>
                           <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                          <div className="muted mono" style={{ fontSize: 11 }}>{p.sku || '—'}</div>
+                          <div className="muted mono" style={{ fontSize: 11 }}>{p.brand || '—'}</div>
                         </div>
-                        <div className="num" style={{ fontSize: 12.5 }}>{fmtTHB(p.price)}</div>
+                        <div className="num" style={{ fontSize: 12.5 }}>{p.price_min == null ? '—' : fmtTHB(p.price_min)}</div>
                         <button type="button" className="btn btn-sm btn-icon btn-ghost" onClick={() => setSelected((s) => s.filter((x) => x !== id))}><Icons.x /></button>
                       </div>
                     );

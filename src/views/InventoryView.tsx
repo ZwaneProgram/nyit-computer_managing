@@ -2,16 +2,19 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Icons } from '../components/Icons';
 import { fmtTHB, fmtN } from '../data/format';
 import {
-  addSerials,
+  addUnits,
   deleteProduct,
   deleteSerial,
   fetchCategories,
   fetchProduct,
   fetchProducts,
+  updateSerial,
+  uploadImage,
   type Category,
   type Product,
   type ProductStatus,
   type Serial,
+  type UnitInput,
 } from '../data/inventory';
 import { ApiError } from '../lib/api';
 import type { ViewId } from '../types';
@@ -22,18 +25,14 @@ interface ViewProps {
   onEditProduct: (id: number) => void;
 }
 
-type SortKey = 'name' | 'stock' | 'cost' | 'price';
+type SortKey = 'name' | 'stock' | 'price';
 type StockFilter = 'all' | 'in' | 'out';
 
-/** Square thumbnail: photo if present, otherwise "ไม่มีรูป". */
-function Thumb({ url, lg }: { url: string | null; lg?: boolean }) {
-  return (
-    <div className={lg ? 'thumb thumb-lg' : 'thumb'}>
-      {url
-        ? <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-        : <span style={{ fontSize: lg ? 10 : 8, color: 'var(--ink-4)' }}>ไม่มีรูป</span>}
-    </div>
-  );
+/** Price range label for a catalog's in-stock units. */
+function priceLabel(p: Product): string {
+  if (p.price_min == null) return '—';
+  if (p.price_max != null && p.price_max !== p.price_min) return `${fmtTHB(p.price_min)}+`;
+  return fmtTHB(p.price_min);
 }
 
 export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
@@ -75,11 +74,12 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
       const s = q.toLowerCase();
       arr = arr.filter((p) =>
         p.name.toLowerCase().includes(s) ||
-        (p.sku ?? '').toLowerCase().includes(s) ||
         (p.brand ?? '').toLowerCase().includes(s));
     }
+    const sortVal = (p: Product): string | number =>
+      sort.key === 'name' ? p.name : sort.key === 'stock' ? p.stock : (p.price_min ?? 0);
     arr.sort((a, b) => {
-      const va = a[sort.key]; const vb = b[sort.key];
+      const va = sortVal(a); const vb = sortVal(b);
       const cmp = typeof va === 'string'
         ? va.localeCompare(vb as string, 'th')
         : (va as number) - (vb as number);
@@ -95,7 +95,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
 
   const onDelete = async (p: Product) => {
-    if (!window.confirm(`ลบ "${p.name}" และ Serial ทั้งหมดของสินค้านี้?`)) return;
+    if (!window.confirm(`ลบ "${p.name}" และเครื่องทั้งหมดของสินค้านี้?`)) return;
     try {
       await deleteProduct(p.id);
       showToast('ลบสินค้าแล้ว');
@@ -137,7 +137,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
     { id: 'out', label: 'หมด', count: products.filter((p) => p.stock === 0).length },
   ];
 
-  const totalValue = products.reduce((s, p) => s + p.cost * p.stock, 0);
+  const totalValue = products.reduce((s, p) => s + p.stock_cost, 0);
 
   return (
     <div className="grid" style={{ gap: 'var(--gap)' }}>
@@ -160,7 +160,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
         <div className="filterbar" style={{ marginBottom: 16 }}>
           <div className="search grow">
             <Icons.search />
-            <input placeholder="ค้นหาชื่อสินค้า, SKU, หรือยี่ห้อ..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+            <input placeholder="ค้นหาชื่อสินค้า หรือยี่ห้อ..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
           </div>
           <select className="select select-auto" value={cat} onChange={(e) => { setCat(e.target.value === 'all' ? 'all' : Number(e.target.value)); setPage(1); }}>
             <option value="all">ทุกหมวดหมู่</option>
@@ -181,10 +181,8 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
             <thead>
               <tr>
                 <SortHd k="name">สินค้า</SortHd>
-                <th>SKU</th>
                 <th>หมวด</th>
                 <SortHd k="stock" right>คงเหลือ</SortHd>
-                <SortHd k="cost" right>ราคาทุน</SortHd>
                 <SortHd k="price" right>ราคาขาย</SortHd>
                 <th>สถานะ</th>
                 <th style={{ width: 90 }} />
@@ -194,19 +192,14 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
               {pageItems.map((p) => (
                 <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => setDetailId(p.id)}>
                   <td className="cell-primary">
-                    <div className="product-cell">
-                      <Thumb url={p.image_url} />
-                      <div>
-                        <div className="product-cell-name">{p.name}</div>
-                        <div className="product-cell-meta">{p.brand || '—'}{p.warranty_months ? ` · รับประกัน ${p.warranty_months} เดือน` : ''}</div>
-                      </div>
+                    <div>
+                      <div className="product-cell-name">{p.name}</div>
+                      <div className="product-cell-meta">{p.brand || '—'}</div>
                     </div>
                   </td>
-                  <td data-label="SKU"><div className="mono" style={{ fontSize: 12 }}>{p.sku || '—'}</div></td>
                   <td data-label="หมวด"><span className="muted" style={{ fontSize: 12.5 }}>{p.category_name || '—'}</span></td>
                   <td className="num" data-label="คงเหลือ" style={{ textAlign: 'right' }}>{p.stock}</td>
-                  <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{fmtTHB(p.cost)}</td>
-                  <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(p.price)}</td>
+                  <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{priceLabel(p)}</td>
                   <td data-label="สถานะ">{statusChip(p)}</td>
                   <td className="cell-actions" style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
@@ -217,12 +210,12 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                 </tr>
               ))}
               {!loading && pageItems.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40 }} className="muted">
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40 }} className="muted">
                   {tab === 'draft' ? 'ยังไม่มีแบบร่าง' : 'ยังไม่มีสินค้า — กด "เพิ่มสินค้า" เพื่อเริ่ม'}
                 </td></tr>
               )}
               {loading && (
-                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40 }} className="muted">กำลังโหลด...</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40 }} className="muted">กำลังโหลด...</td></tr>
               )}
             </tbody>
           </table>
@@ -255,13 +248,31 @@ interface DetailProps {
   showToast: (msg: string) => void;
 }
 
+/** Blank unit form values. */
+const blankUnit = (): UnitFormState => ({ serial: '', sku: '', cost: '', price: '', warranty: '36', note: '', image_url: null });
+interface UnitFormState {
+  serial: string; sku: string; cost: string; price: string; warranty: string; note: string; image_url: string | null;
+}
+const toUnitInput = (u: UnitFormState): UnitInput => ({
+  serial: u.serial.trim(),
+  sku: u.sku.trim() || null,
+  cost: Number(u.cost) || 0,
+  price: Number(u.price) || 0,
+  warranty_months: Number(u.warranty) || 0,
+  note: u.note.trim() || null,
+  image_url: u.image_url,
+});
+
 function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps) {
   const [product, setProduct] = useState<Product | null>(null);
   const [serials, setSerials] = useState<Serial[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [serialInput, setSerialInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addForm, setAddForm] = useState<UnitFormState>(blankUnit());
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<UnitFormState>(blankUnit());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -278,17 +289,42 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
 
   useEffect(() => { load(); }, [load]);
 
-  const addOne = async () => {
-    const v = serialInput.trim();
-    if (!v) return;
+  const addUnit = async () => {
+    if (!addForm.serial.trim()) { showToast('ต้องระบุ Serial Number'); return; }
     setBusy(true);
     try {
-      await addSerials(id, [v]);
-      setSerialInput('');
+      await addUnits(id, [toUnitInput(addForm)]);
+      setAddForm(blankUnit());
+      setAdding(false);
       showToast('เพิ่มเครื่องแล้ว');
       load();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'เพิ่มไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startEdit = (s: Serial) => {
+    setEditId(s.id);
+    setEditForm({
+      serial: s.serial, sku: s.sku ?? '', cost: s.cost ? String(s.cost) : '',
+      price: s.price ? String(s.price) : '', warranty: String(s.warranty_months),
+      note: s.note ?? '', image_url: s.image_url,
+    });
+  };
+
+  const saveEdit = async () => {
+    if (editId == null) return;
+    if (!editForm.serial.trim()) { showToast('ต้องระบุ Serial Number'); return; }
+    setBusy(true);
+    try {
+      await updateSerial(editId, toUnitInput(editForm));
+      setEditId(null);
+      showToast('บันทึกการแก้ไขแล้ว');
+      load();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'บันทึกไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
@@ -307,7 +343,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
 
   const onDeleteProduct = async () => {
     if (!product) return;
-    if (!window.confirm(`ลบ "${product.name}" และ Serial ทั้งหมด?`)) return;
+    if (!window.confirm(`ลบ "${product.name}" และเครื่องทั้งหมด?`)) return;
     try {
       await deleteProduct(product.id);
       showToast('ลบสินค้าแล้ว');
@@ -326,7 +362,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
   );
 
   const inStock = serials.filter((s) => s.status === 'in_stock').length;
-  const serialStatusChip = (s: SerialStatusLabel) => {
+  const serialStatusChip = (s: Serial['status']) => {
     if (s === 'in_stock') return <span className="chip chip-pos chip-dot">ในสต๊อก</span>;
     if (s === 'sold') return <span className="chip chip-dot">ขายแล้ว</span>;
     return <span className="chip chip-warn chip-dot">คืน</span>;
@@ -338,7 +374,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
         <div>
           <button type="button" className="btn btn-sm btn-ghost" onClick={onBack} style={{ marginBottom: 8 }}>← กลับไปคลังสินค้า</button>
           <div className="page-title">{product.name}</div>
-          <div className="muted page-subtitle">{product.sku || 'ยังไม่มี SKU'} · {product.category_name || 'ไม่ระบุหมวด'}{product.status === 'draft' ? ' · แบบร่าง' : ''}</div>
+          <div className="muted page-subtitle">{product.category_name || 'ไม่ระบุหมวด'}{product.status === 'draft' ? ' · แบบร่าง' : ''}</div>
         </div>
         <div className="page-head-actions">
           <button className="btn" onClick={onEdit}><Icons.edit /> แก้ไข</button>
@@ -349,17 +385,11 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
       <div className="grid grid-cols-1 lg:grid-cols-12">
         <div className="col-span-12 lg:col-span-4">
           <div className="card card-pad">
-            <div style={{ aspectRatio: '4/3', borderRadius: 'var(--r-md)', overflow: 'hidden', background: 'var(--surface-sunk)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-              {product.image_url
-                ? <img src={product.image_url} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : <span className="muted">ไม่มีรูป</span>}
-            </div>
             <div className="summary-box">
               <div className="summary-row"><span className="muted">ยี่ห้อ</span><span>{product.brand || '—'}</span></div>
               <div className="summary-row"><span className="muted">รุ่น</span><span>{product.model || '—'}</span></div>
-              <div className="summary-row"><span className="muted">ราคาทุน</span><span className="num">{fmtTHB(product.cost)}</span></div>
-              <div className="summary-row"><span className="muted">ราคาขาย</span><span className="num" style={{ fontWeight: 600 }}>{fmtTHB(product.price)}</span></div>
-              <div className="summary-row"><span className="muted">รับประกัน</span><span>{product.warranty_months ? `${product.warranty_months} เดือน` : 'ไม่มี'}</span></div>
+              <div className="summary-row"><span className="muted">คงเหลือ</span><span className="num">{inStock} เครื่อง</span></div>
+              <div className="summary-row"><span className="muted">ช่วงราคาขาย</span><span className="num">{priceLabel(product)}</span></div>
               <div className="summary-row"><span className="muted">จุดสั่งซื้อ</span><span className="num">{product.low}</span></div>
             </div>
             {product.notes && <div className="hint-box" style={{ marginTop: 12 }}><Icons.warning style={{ width: 14, height: 14, color: 'var(--accent)', marginTop: 1 }} /><span>{product.notes}</span></div>}
@@ -369,34 +399,60 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
         <div className="col-span-12 lg:col-span-8">
           <div className="card card-pad">
             <div className="section-h">
-              <div><h3>เครื่องในสต๊อก ({inStock})</h3><div className="muted section-sub">แต่ละ serial = 1 เครื่อง · รวมทั้งหมด {serials.length} รายการ</div></div>
+              <div><h3>เครื่องในสต๊อก ({inStock})</h3><div className="muted section-sub">แต่ละเครื่องมีราคา/รับประกัน/รูปของตัวเอง · รวม {serials.length} รายการ</div></div>
+              <div className="spacer" />
+              {!adding && <button type="button" className="btn btn-sm btn-primary" onClick={() => setAdding(true)}><Icons.plus /> เพิ่มเครื่อง</button>}
             </div>
-            <div className="field" style={{ marginBottom: 14 }}>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input className="input mono" placeholder="เพิ่ม Serial Number ของเครื่องใหม่..." value={serialInput} disabled={busy}
-                  onChange={(e) => setSerialInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOne(); } }} />
-                <button type="button" className="btn btn-primary" onClick={addOne} disabled={busy}><Icons.plus /> เพิ่มเครื่อง</button>
+
+            {adding && (
+              <div className="card card-pad" style={{ background: 'var(--surface-sunk)', marginBottom: 14 }}>
+                <UnitFields value={addForm} onChange={setAddForm} onUploadError={showToast} />
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button className="btn btn-primary btn-sm" disabled={busy} onClick={addUnit}><Icons.check /> เพิ่ม</button>
+                  <button className="btn btn-sm" onClick={() => { setAdding(false); setAddForm(blankUnit()); }}>ยกเลิก</button>
+                </div>
               </div>
-            </div>
+            )}
+
             <div className="table-wrap">
               <table className="tbl tbl-cards">
-                <thead><tr><th>Serial Number</th><th>สถานะ</th><th>เพิ่มเมื่อ</th><th style={{ width: 50 }} /></tr></thead>
+                <thead><tr><th>Serial / SKU</th><th style={{ textAlign: 'right' }}>ราคาทุน</th><th style={{ textAlign: 'right' }}>ราคาขาย</th><th>รับประกัน</th><th>สถานะ</th><th style={{ width: 80 }} /></tr></thead>
                 <tbody>
                   {serials.map((s) => (
-                    <tr key={s.id}>
-                      <td className="cell-primary mono" style={{ fontSize: 12.5 }}>{s.serial}</td>
-                      <td data-label="สถานะ">{serialStatusChip(s.status)}</td>
-                      <td data-label="เพิ่มเมื่อ"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(s.created_at).toLocaleDateString('th-TH')}</span></td>
-                      <td className="cell-actions">
-                        {s.status === 'in_stock'
-                          ? <button className="btn btn-sm btn-icon btn-ghost" title="ลบเครื่องนี้" onClick={() => removeSerial(s)}><Icons.trash /></button>
-                          : null}
-                      </td>
-                    </tr>
+                    editId === s.id ? (
+                      <tr key={s.id}>
+                        <td colSpan={6} style={{ padding: 14 }}>
+                          <UnitFields value={editForm} onChange={setEditForm} onUploadError={showToast} />
+                          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                            <button className="btn btn-primary btn-sm" disabled={busy} onClick={saveEdit}><Icons.check /> บันทึก</button>
+                            <button className="btn btn-sm" onClick={() => setEditId(null)}>ยกเลิก</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={s.id}>
+                        <td className="cell-primary">
+                          <div className="mono" style={{ fontSize: 12.5 }}>{s.serial}</div>
+                          {s.sku && <div className="mono muted" style={{ fontSize: 11 }}>{s.sku}</div>}
+                          {s.note && <div className="muted" style={{ fontSize: 11 }}>{s.note}</div>}
+                        </td>
+                        <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{fmtTHB(s.cost)}</td>
+                        <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(s.price)}</td>
+                        <td data-label="รับประกัน"><span className="muted" style={{ fontSize: 12.5 }}>{s.warranty_months ? `${s.warranty_months} เดือน` : 'ไม่มี'}</span></td>
+                        <td data-label="สถานะ">{serialStatusChip(s.status)}</td>
+                        <td className="cell-actions">
+                          {s.status === 'in_stock' && (
+                            <div style={{ display: 'inline-flex', gap: 4 }}>
+                              <button className="btn btn-sm btn-icon btn-ghost" title="แก้ไขเครื่องนี้" onClick={() => startEdit(s)}><Icons.edit /></button>
+                              <button className="btn btn-sm btn-icon btn-ghost" title="ลบเครื่องนี้" onClick={() => removeSerial(s)}><Icons.trash /></button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
                   ))}
                   {serials.length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: 'center', padding: 30 }} className="muted">ยังไม่มีเครื่องในสต๊อก — เพิ่ม Serial ด้านบน</td></tr>
+                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30 }} className="muted">ยังไม่มีเครื่องในสต๊อก — กด "เพิ่มเครื่อง" ด้านบน</td></tr>
                   )}
                 </tbody>
               </table>
@@ -408,4 +464,60 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
   );
 }
 
-type SerialStatusLabel = Serial['status'];
+/** Shared editable fields for one unit (add + edit). */
+function UnitFields({ value, onChange, onUploadError }: {
+  value: UnitFormState;
+  onChange: (v: UnitFormState) => void;
+  onUploadError: (msg: string) => void;
+}) {
+  const set = (patch: Partial<UnitFormState>) => onChange({ ...value, ...patch });
+  const onPick = async (file: File | undefined) => {
+    if (!file) return;
+    try { set({ image_url: await uploadImage(file) }); }
+    catch (err) { onUploadError(err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ'); }
+  };
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[14px]">
+      <div className="field">
+        <label className="field-label">Serial Number *</label>
+        <input className="input mono" placeholder="SN-XXXX" value={value.serial} onChange={(e) => set({ serial: e.target.value })} />
+      </div>
+      <div className="field">
+        <label className="field-label">SKU (ไม่บังคับ)</label>
+        <input className="input mono" placeholder="SKU001" value={value.sku} onChange={(e) => set({ sku: e.target.value })} />
+      </div>
+      <div className="field">
+        <label className="field-label">รับประกัน (เดือน)</label>
+        <input className="input num" type="number" min="0" placeholder="0" value={value.warranty} onChange={(e) => set({ warranty: e.target.value })} />
+      </div>
+      <div className="field">
+        <label className="field-label">ราคาทุน (บาท)</label>
+        <div className="input-prefix"><span className="pfx">฿</span>
+          <input className="input num" type="number" placeholder="0" value={value.cost} onChange={(e) => set({ cost: e.target.value })} /></div>
+      </div>
+      <div className="field">
+        <label className="field-label">ราคาขาย (บาท)</label>
+        <div className="input-prefix"><span className="pfx">฿</span>
+          <input className="input num" type="number" placeholder="0" value={value.price} onChange={(e) => set({ price: e.target.value })} /></div>
+      </div>
+      <div className="field">
+        <label className="field-label">รูปของเครื่องนี้</label>
+        {value.image_url ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <img src={value.image_url} alt="" style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 'var(--r-md)', background: 'var(--surface)' }} />
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => set({ image_url: null })}><Icons.trash /></button>
+          </div>
+        ) : (
+          <label className="btn btn-sm" style={{ cursor: 'pointer', width: 'fit-content' }}>
+            <Icons.upload style={{ width: 14, height: 14 }} /> เลือกรูป
+            <input type="file" accept="image/*" hidden onChange={(e) => onPick(e.target.files?.[0])} />
+          </label>
+        )}
+      </div>
+      <div className="field" style={{ gridColumn: '1 / -1' }}>
+        <label className="field-label">โน้ต (เฉพาะเครื่องนี้)</label>
+        <input className="input" placeholder="เช่น กล่องบุบ, ของโชว์" value={value.note} onChange={(e) => set({ note: e.target.value })} />
+      </div>
+    </div>
+  );
+}

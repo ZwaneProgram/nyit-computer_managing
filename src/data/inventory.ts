@@ -16,7 +16,13 @@ export interface Category {
 export interface Serial {
   id: number;
   serial: string;
+  sku: string | null;
   status: SerialStatus;
+  cost: number;
+  price: number;
+  warranty_months: number;
+  note: string | null;
+  image_url: string | null;
   sale_id: number | null;
   created_at: string;
 }
@@ -27,37 +33,45 @@ export interface Product {
   category_name: string | null;
   category_slug: string | null;
   name: string;
-  sku: string | null;
   brand: string | null;
   model: string | null;
-  cost: number;
-  price: number;
   low: number;
-  warranty_months: number;
-  image_url: string | null;
   notes: string | null;
   status: ProductStatus;
-  /** Derived: count of in_stock serial units. */
+  /** Derived: count of in_stock units. */
   stock: number;
+  /** Price range of in-stock units (null when none). */
+  price_min: number | null;
+  price_max: number | null;
+  /** Cheapest in-stock unit's cost (null when none) — representative cost. */
+  cost_min: number | null;
+  /** Sum of in-stock units' cost. */
+  stock_cost: number;
   created_at: string;
   updated_at: string;
 }
 
-/** Fields the create/update form sends. */
+/** One physical unit the form sends. */
+export interface UnitInput {
+  serial: string;
+  sku: string | null;
+  cost: number;
+  price: number;
+  warranty_months: number;
+  note: string | null;
+  image_url: string | null;
+}
+
+/** Catalog fields the create/update form sends. */
 export interface ProductInput {
   category_id: number | null;
   name: string;
-  sku: string | null;
   brand: string | null;
   model: string | null;
-  cost: number;
-  price: number;
   low: number;
-  warranty_months: number;
-  image_url: string | null;
   notes: string | null;
   status: ProductStatus;
-  serials?: string[];
+  units?: UnitInput[];
 }
 
 const n = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -69,17 +83,16 @@ function normProduct(r: Record<string, unknown>): Product {
     category_name: (r.category_name as string) ?? null,
     category_slug: (r.category_slug as string) ?? null,
     name: r.name as string,
-    sku: (r.sku as string) ?? null,
     brand: (r.brand as string) ?? null,
     model: (r.model as string) ?? null,
-    cost: n(r.cost),
-    price: n(r.price),
     low: n(r.low),
-    warranty_months: n(r.warranty_months),
-    image_url: (r.image_url as string) ?? null,
     notes: (r.notes as string) ?? null,
     status: (r.status as ProductStatus) ?? 'active',
     stock: n(r.stock),
+    price_min: r.price_min == null ? null : n(r.price_min),
+    price_max: r.price_max == null ? null : n(r.price_max),
+    cost_min: r.cost_min == null ? null : n(r.cost_min),
+    stock_cost: n(r.stock_cost),
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
   };
@@ -89,7 +102,13 @@ function normSerial(r: Record<string, unknown>): Serial {
   return {
     id: Number(r.id),
     serial: r.serial as string,
+    sku: (r.sku as string) ?? null,
     status: r.status as SerialStatus,
+    cost: n(r.cost),
+    price: n(r.price),
+    warranty_months: n(r.warranty_months),
+    note: (r.note as string) ?? null,
+    image_url: (r.image_url as string) ?? null,
     sale_id: r.sale_id == null ? null : Number(r.sale_id),
     created_at: r.created_at as string,
   };
@@ -146,12 +165,17 @@ export async function deleteProduct(id: number): Promise<void> {
   await http.del(`/api/products/${id}`);
 }
 
-export async function addSerials(productId: number, serials: string[]): Promise<Serial[]> {
+export async function addUnits(productId: number, units: UnitInput[]): Promise<Serial[]> {
   const r = await http.post<{ serials: Record<string, unknown>[] }>(
     `/api/products/${productId}/serials`,
-    { serials },
+    { units },
   );
   return r.serials.map(normSerial);
+}
+
+export async function updateSerial(serialId: number, input: UnitInput): Promise<Serial> {
+  const { serial } = await http.put<{ serial: Record<string, unknown> }>(`/api/serials/${serialId}`, input);
+  return normSerial(serial);
 }
 
 export async function deleteSerial(serialId: number): Promise<void> {

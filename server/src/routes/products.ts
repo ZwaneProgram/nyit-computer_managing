@@ -74,7 +74,7 @@ function conflictMessage(err: unknown): string | null {
 const PRODUCT_SELECT = `
   select p.*, c.name as category_name, c.slug as category_slug,
          coalesce(s.in_stock, 0)::int as stock,
-         s.price_min, s.price_max, coalesce(s.stock_cost, 0) as stock_cost
+         s.price_min, s.price_max, s.cost_min, coalesce(s.stock_cost, 0) as stock_cost
     from products p
     left join categories c on c.id = p.category_id
     left join (
@@ -82,6 +82,7 @@ const PRODUCT_SELECT = `
              count(*) filter (where status = 'in_stock') as in_stock,
              min(price) filter (where status = 'in_stock') as price_min,
              max(price) filter (where status = 'in_stock') as price_max,
+             min(cost)  filter (where status = 'in_stock') as cost_min,
              sum(cost)  filter (where status = 'in_stock') as stock_cost
         from product_serials group by product_id
     ) s on s.product_id = p.id`;
