@@ -23,7 +23,7 @@ export interface Sale {
 
 export interface NewSale {
   kind: 'item' | 'bundle';
-  items?: { product_id: number; qty: number }[];
+  items?: { serial_id: number }[];
   bundle_id?: number;
   bundle_qty?: number;
   customer_name?: string | null;

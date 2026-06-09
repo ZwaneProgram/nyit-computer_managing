@@ -20,13 +20,21 @@ function cleanIds(input: unknown): number[] {
 
 // Items for a set of bundles, each with the component product + derived stock.
 async function itemsByBundle(): Promise<Map<string, unknown[]>> {
+  // Per-item inventory: derive a representative price/cost from the cheapest
+  // in-stock unit (catalog no longer stores price/cost/sku/image).
   const { rows } = await query(
-    `select bi.bundle_id, p.id as product_id, p.name, p.sku, p.price, p.cost, p.image_url,
-            coalesce(s.in_stock, 0)::int as stock
+    `select bi.bundle_id, p.id as product_id, p.name,
+            null::text as sku, null::text as image_url,
+            coalesce(s.in_stock, 0)::int as stock,
+            coalesce(s.price_min, 0) as price,
+            coalesce(s.cost_min, 0)  as cost
        from bundle_items bi
        join products p on p.id = bi.product_id
        left join (
-         select product_id, count(*) filter (where status = 'in_stock') as in_stock
+         select product_id,
+                count(*) filter (where status = 'in_stock') as in_stock,
+                min(price) filter (where status = 'in_stock') as price_min,
+                min(cost)  filter (where status = 'in_stock') as cost_min
            from product_serials group by product_id
        ) s on s.product_id = p.id
       order by p.name`,

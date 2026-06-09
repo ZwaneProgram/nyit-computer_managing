@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Icons } from '../components/Icons';
 import { fmtTHB } from '../data/format';
-import { fetchProducts, type Product } from '../data/inventory';
+import { fetchProduct, fetchProducts, type Product, type Serial } from '../data/inventory';
 import { fetchBundles, type Bundle } from '../data/bundles';
 import { createSale, fetchSales, type NewSale, type Sale } from '../data/sales';
 import { ApiError } from '../lib/api';
@@ -10,17 +10,8 @@ interface ViewProps {
   showToast: (msg: string) => void;
 }
 
-function Thumb({ url }: { url: string | null }) {
-  return (
-    <div className="thumb">
-      {url
-        ? <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-        : <span style={{ fontSize: 7, color: 'var(--ink-4)' }}>ไม่มีรูป</span>}
-    </div>
-  );
-}
-
-interface CartLine { product_id: number; qty: number }
+/** One chosen physical unit in the cart. */
+interface CartUnit { serial: Serial; product_name: string }
 
 export function SalesView({ showToast }: ViewProps) {
   const [mode, setMode] = useState<'new' | 'history'>('new');
@@ -28,7 +19,7 @@ export function SalesView({ showToast }: ViewProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [bundles, setBundles] = useState<Bundle[]>([]);
 
-  const [cart, setCart] = useState<CartLine[]>([]);
+  const [cart, setCart] = useState<CartUnit[]>([]);
   const [bundleId, setBundleId] = useState<number | null>(null);
   const [bundleQty, setBundleQty] = useState(1);
 
@@ -37,6 +28,8 @@ export function SalesView({ showToast }: ViewProps) {
   const [discount, setDiscount] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQ, setSearchQ] = useState('');
+  const [expandedPid, setExpandedPid] = useState<number | null>(null);
+  const [unitMap, setUnitMap] = useState<Record<number, Serial[]>>({});
 
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState<Sale | null>(null);
@@ -44,7 +37,7 @@ export function SalesView({ showToast }: ViewProps) {
   const [history, setHistory] = useState<Sale[]>([]);
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [hq, setHq] = useState('');           // search box (debounced into hqDebounced)
+  const [hq, setHq] = useState('');
   const [hqDebounced, setHqDebounced] = useState('');
   const [hFrom, setHFrom] = useState('');
   const [hTo, setHTo] = useState('');
@@ -57,13 +50,11 @@ export function SalesView({ showToast }: ViewProps) {
   }, []);
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
-  // Debounce the search box (300ms).
   useEffect(() => {
     const id = window.setTimeout(() => setHqDebounced(hq), 300);
     return () => window.clearTimeout(id);
   }, [hq]);
 
-  // Reset to page 1 whenever a filter changes.
   useEffect(() => { setHPage(1); }, [hqDebounced, hFrom, hTo]);
 
   const loadHistory = useCallback(() => {
@@ -81,42 +72,46 @@ export function SalesView({ showToast }: ViewProps) {
   }, [hqDebounced, hFrom, hTo, hPage]);
   useEffect(() => { if (mode === 'history') loadHistory(); }, [mode, loadHistory]);
 
-  const productById = useMemo(() => {
-    const m = new Map<number, Product>();
-    products.forEach((p) => m.set(p.id, p));
-    return m;
-  }, [products]);
+  // Lazy-load a product's in-stock units when its picker row is expanded.
+  const loadUnits = async (pid: number) => {
+    if (unitMap[pid]) return;
+    try {
+      const { serials } = await fetchProduct(pid);
+      setUnitMap((m) => ({ ...m, [pid]: serials.filter((s) => s.status === 'in_stock') }));
+    } catch { /* ignore */ }
+  };
 
   const selectedBundle = bundles.find((b) => b.id === bundleId) ?? null;
+  const chosenIds = new Set(cart.map((c) => c.serial.id));
 
-  // Compute totals for the current draft.
-  const itemLines = cart.map((c) => ({ p: productById.get(c.product_id)!, qty: c.qty })).filter((l) => l.p);
   const subtotal = type === 'item'
-    ? itemLines.reduce((s, l) => s + l.p.price * l.qty, 0)
+    ? cart.reduce((s, c) => s + c.serial.price, 0)
     : (selectedBundle ? selectedBundle.price * bundleQty : 0);
   const cost = type === 'item'
-    ? itemLines.reduce((s, l) => s + l.p.cost * l.qty, 0)
+    ? cart.reduce((s, c) => s + c.serial.cost, 0)
     : (selectedBundle ? selectedBundle.total_cost * bundleQty : 0);
   const total = subtotal + shipping - discount;
   const profit = subtotal - cost - discount;
+  const itemCount = type === 'item' ? cart.length : bundleQty;
 
-  const itemCount = type === 'item' ? itemLines.reduce((s, l) => s + l.qty, 0) : bundleQty;
-
-  // Validity: something selected + not exceeding stock.
-  const overStock = type === 'item'
-    ? itemLines.some((l) => l.qty > l.p.stock)
-    : (!!selectedBundle && bundleQty > selectedBundle.stock);
-  const canConfirm = !busy && !overStock && (type === 'item' ? itemLines.length > 0 : !!selectedBundle && bundleQty > 0);
+  const overStock = type === 'bundle' && !!selectedBundle && bundleQty > selectedBundle.stock;
+  const canConfirm = !busy && !overStock && (type === 'item' ? cart.length > 0 : !!selectedBundle && bundleQty > 0);
 
   const searchResults = products.filter((p) =>
-    !cart.find((c) => c.product_id === p.id) &&
-    (searchQ ? p.name.toLowerCase().includes(searchQ.toLowerCase()) || (p.sku ?? '').toLowerCase().includes(searchQ.toLowerCase()) : true),
+    p.stock > 0 &&
+    (searchQ ? p.name.toLowerCase().includes(searchQ.toLowerCase()) || (p.brand ?? '').toLowerCase().includes(searchQ.toLowerCase()) : true),
   ).slice(0, 8);
+
+  const addUnitToCart = (product_name: string, serial: Serial) => {
+    if (chosenIds.has(serial.id)) return;
+    setCart((c) => [...c, { serial, product_name }]);
+  };
 
   const resetDraft = () => {
     setCart([]); setBundleId(null); setBundleQty(1);
     setCustomer({ name: '', phone: '', address: '', taxId: '' });
     setShipping(0); setDiscount(0);
+    setShowSearch(false); setSearchQ(''); setExpandedPid(null);
   };
 
   const confirm = async () => {
@@ -129,7 +124,7 @@ export function SalesView({ showToast }: ViewProps) {
       tax_id: customer.taxId.trim() || null,
       shipping, discount,
       ...(type === 'item'
-        ? { items: cart }
+        ? { items: cart.map((c) => ({ serial_id: c.serial.id })) }
         : { bundle_id: bundleId!, bundle_qty: bundleQty }),
     };
     setBusy(true);
@@ -137,7 +132,8 @@ export function SalesView({ showToast }: ViewProps) {
       const sale = await createSale(payload);
       setConfirmed(sale);
       resetDraft();
-      loadProducts(); // stock changed
+      setUnitMap({});
+      loadProducts();
       showToast('บันทึกการขายแล้ว · ตัดสต๊อกอัตโนมัติ');
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'บันทึกการขายไม่สำเร็จ');
@@ -253,7 +249,7 @@ export function SalesView({ showToast }: ViewProps) {
                 <button type="button" onClick={() => setType('item')} className="product-pick"
                   style={{ flex: 1, borderColor: type === 'item' ? 'var(--accent)' : 'var(--border)', background: type === 'item' ? 'var(--accent-soft-2)' : 'var(--surface)' }}>
                   <div className="sale-type-ic"><Icons.box /></div>
-                  <div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>สินค้าเดี่ยว</div><div className="muted" style={{ fontSize: 12 }}>เลือกหลายชิ้นได้</div></div>
+                  <div style={{ flex: 1 }}><div style={{ fontWeight: 500 }}>สินค้าเดี่ยว</div><div className="muted" style={{ fontSize: 12 }}>เลือกทีละเครื่อง</div></div>
                 </button>
                 <button type="button" onClick={() => setType('bundle')} className="product-pick"
                   style={{ flex: 1, borderColor: type === 'bundle' ? 'var(--accent)' : 'var(--border)', background: type === 'bundle' ? 'var(--accent-soft-2)' : 'var(--surface)' }}>
@@ -292,19 +288,37 @@ export function SalesView({ showToast }: ViewProps) {
                     <div style={{ padding: '0 20px 12px' }}>
                       <div className="search" style={{ width: '100%' }}>
                         <Icons.search />
-                        <input autoFocus placeholder="ค้นหาสินค้าจากชื่อ หรือ SKU..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} />
+                        <input autoFocus placeholder="ค้นหาสินค้าจากชื่อ หรือยี่ห้อ..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} />
                       </div>
-                      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 260, overflowY: 'auto' }}>
+                      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 320, overflowY: 'auto' }}>
                         {searchResults.map((p) => (
-                          <button key={p.id} type="button" className="product-pick" disabled={p.stock === 0}
-                            onClick={() => { setCart((is) => [...is, { product_id: p.id, qty: 1 }]); setSearchQ(''); setShowSearch(false); }}>
-                            <Thumb url={p.image_url} />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontWeight: 500 }}>{p.name}</div>
-                              <div className="muted mono" style={{ fontSize: 11.5 }}>{p.sku || '—'} · คงเหลือ {p.stock}</div>
-                            </div>
-                            <div className="num">{fmtTHB(p.price)}</div>
-                          </button>
+                          <div key={p.id}>
+                            <button type="button" className="product-pick" style={{ width: '100%' }}
+                              onClick={() => { const next = expandedPid === p.id ? null : p.id; setExpandedPid(next); if (next != null) loadUnits(p.id); }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: 500 }}>{p.name}</div>
+                                <div className="muted mono" style={{ fontSize: 11.5 }}>{p.brand || '—'} · คงเหลือ {p.stock}</div>
+                              </div>
+                              <div className="num muted">{p.price_min == null ? '—' : `${fmtTHB(p.price_min)}+`}</div>
+                              {expandedPid === p.id ? <Icons.arrowDown style={{ width: 14, height: 14 }} /> : <Icons.arrowRight style={{ width: 14, height: 14 }} />}
+                            </button>
+                            {expandedPid === p.id && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 0 6px 16px' }}>
+                                {(unitMap[p.id] ?? []).filter((u) => !chosenIds.has(u.id)).map((u) => (
+                                  <button key={u.id} type="button" className="product-pick" onClick={() => addUnitToCart(p.name, u)}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div className="mono" style={{ fontSize: 12.5 }}>{u.serial}{u.sku ? ` · ${u.sku}` : ''}</div>
+                                      <div className="muted" style={{ fontSize: 11 }}>{u.warranty_months ? `รับประกัน ${u.warranty_months} เดือน` : 'ไม่มีประกัน'}</div>
+                                    </div>
+                                    <div className="num" style={{ fontWeight: 600 }}>{fmtTHB(u.price)}</div>
+                                  </button>
+                                ))}
+                                {(unitMap[p.id] ?? []).filter((u) => !chosenIds.has(u.id)).length === 0 && (
+                                  <div className="muted" style={{ padding: 8, fontSize: 12 }}>ไม่มีเครื่องว่างให้เลือก</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         ))}
                         {searchResults.length === 0 && <div className="muted" style={{ padding: 12, textAlign: 'center' }}>ไม่พบสินค้า</div>}
                       </div>
@@ -312,30 +326,20 @@ export function SalesView({ showToast }: ViewProps) {
                   )}
                   <div className="table-wrap" style={{ borderRadius: 0 }}>
                     <table className="tbl tbl-cards">
-                      <thead><tr><th>สินค้า</th><th style={{ textAlign: 'right', width: 110 }}>ราคา</th><th style={{ textAlign: 'center', width: 130 }}>จำนวน</th><th style={{ textAlign: 'right', width: 120 }}>ยอดรวม</th><th style={{ width: 40 }} /></tr></thead>
+                      <thead><tr><th>เครื่อง</th><th style={{ textAlign: 'right', width: 130 }}>ราคา</th><th style={{ width: 40 }} /></tr></thead>
                       <tbody>
-                        {itemLines.map((l) => (
-                          <tr key={l.p.id}>
+                        {cart.map((c) => (
+                          <tr key={c.serial.id}>
                             <td className="cell-primary">
-                              <div className="product-cell">
-                                <Thumb url={l.p.image_url} />
-                                <div><div className="product-cell-name">{l.p.name}</div><div className="product-cell-meta">{l.p.sku || '—'} · คงเหลือ {l.p.stock}</div></div>
-                              </div>
+                              <div className="product-cell-name">{c.product_name}</div>
+                              <div className="product-cell-meta mono">{c.serial.serial}{c.serial.sku ? ` · ${c.serial.sku}` : ''}</div>
                             </td>
-                            <td className="num" data-label="ราคา" style={{ textAlign: 'right' }}>{fmtTHB(l.p.price)}</td>
-                            <td data-label="จำนวน">
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                                <button className="btn btn-sm btn-icon btn-ghost" onClick={() => setCart((is) => is.map((i) => (i.product_id === l.p.id ? { ...i, qty: Math.max(1, i.qty - 1) } : i)))}>−</button>
-                                <span className="num" style={{ minWidth: 24, textAlign: 'center', fontWeight: 600, color: l.qty > l.p.stock ? 'var(--neg)' : undefined }}>{l.qty}</span>
-                                <button className="btn btn-sm btn-icon btn-ghost" disabled={l.qty >= l.p.stock} onClick={() => setCart((is) => is.map((i) => (i.product_id === l.p.id ? { ...i, qty: i.qty + 1 } : i)))}>+</button>
-                              </div>
-                            </td>
-                            <td className="num" data-label="ยอดรวม" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(l.p.price * l.qty)}</td>
-                            <td className="cell-actions"><button className="btn btn-sm btn-icon btn-ghost" onClick={() => setCart((is) => is.filter((i) => i.product_id !== l.p.id))}><Icons.trash /></button></td>
+                            <td className="num" data-label="ราคา" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(c.serial.price)}</td>
+                            <td className="cell-actions"><button className="btn btn-sm btn-icon btn-ghost" onClick={() => setCart((is) => is.filter((i) => i.serial.id !== c.serial.id))}><Icons.trash /></button></td>
                           </tr>
                         ))}
-                        {itemLines.length === 0 && (
-                          <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center' }} className="muted">ยังไม่มีรายการ — กด "เพิ่มสินค้า" เพื่อเริ่ม</td></tr>
+                        {cart.length === 0 && (
+                          <tr><td colSpan={3} style={{ padding: 40, textAlign: 'center' }} className="muted">ยังไม่มีรายการ — กด "เพิ่มสินค้า" เพื่อเลือกเครื่อง</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -371,7 +375,7 @@ export function SalesView({ showToast }: ViewProps) {
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span className="muted">{type === 'bundle' ? `ชุดสินค้า (${itemCount})` : `สินค้า (${itemCount} ชิ้น)`}</span>
+                    <span className="muted">{type === 'bundle' ? `ชุดสินค้า (${itemCount})` : `สินค้า (${itemCount} เครื่อง)`}</span>
                     <span className="num">{fmtTHB(subtotal)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

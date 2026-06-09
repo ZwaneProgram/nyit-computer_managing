@@ -30,10 +30,8 @@ export async function statsRoutes(app: FastifyInstance) {
       invVal, monthAgg, seriesAgg, dayAgg, catShare, bundleShare, topProd, low,
       totalsRow, grossRow, serialIn, serialOut, catUnits, bundlePerf, inStockRow,
     ] = await Promise.all([
-      // --- snapshot: inventory value (range-independent) ---
-      query(`select coalesce(sum(p.cost * s.cnt),0) v from products p
-               join (select product_id, count(*) cnt from product_serials where status='in_stock' group by product_id) s
-                 on s.product_id = p.id`),
+      // --- snapshot: inventory value (range-independent) — sum each in-stock unit's own cost ---
+      query(`select coalesce(sum(cost),0) v from product_serials where status='in_stock'`),
       // --- monthly agg (ALWAYS all-time monthly) — drives the month-over-month KPI deltas ---
       query(`select to_char(date_trunc('month',created_at),'YYYY-MM') k,
                      sum(total) sales, sum(profit) profit, count(*) orders
@@ -58,7 +56,7 @@ export async function statsRoutes(app: FastifyInstance) {
                from sale_items si join sales s on s.id=si.sale_id
                where si.bundle_id is not null and ($1::timestamptz is null or s.created_at >= $1)`, [since]),
       // --- top products (range) ---
-      query(`select p.id, p.name, p.sku, p.image_url,
+      query(`select p.id, p.name,
                      sum(si.qty) qty, sum(si.unit_price*si.qty) revenue,
                      sum((si.unit_price-si.unit_cost)*si.qty) profit
                from sale_items si
@@ -67,7 +65,7 @@ export async function statsRoutes(app: FastifyInstance) {
                where si.product_id is not null and ($1::timestamptz is null or s.created_at >= $1)
                group by p.id order by qty desc limit 5`, [since]),
       // --- low stock (snapshot; used by Dashboard) ---
-      query(`select p.id, p.name, p.sku, p.brand, p.image_url, c.name category_name, p.low,
+      query(`select p.id, p.name, p.brand, c.name category_name, p.low,
                      coalesce(s.cnt,0)::int stock
                from products p left join categories c on c.id=p.category_id
                left join (select product_id, count(*) cnt from product_serials where status='in_stock' group by product_id) s
@@ -194,12 +192,12 @@ export async function statsRoutes(app: FastifyInstance) {
       categoryShare,
       categoryUnits: (catUnits.rows as Record<string, unknown>[]).map((r) => ({ label: r.label as string, units: n(r.units) })),
       topProducts: (topProd.rows as Record<string, unknown>[]).map((r) => ({
-        id: Number(r.id), name: r.name as string, sku: (r.sku as string) ?? null, image_url: (r.image_url as string) ?? null,
+        id: Number(r.id), name: r.name as string, sku: null as string | null, image_url: null as string | null,
         qty: n(r.qty), revenue: n(r.revenue), profit: n(r.profit),
       })),
       lowStock: (low.rows as Record<string, unknown>[]).map((r) => ({
-        id: Number(r.id), name: r.name as string, sku: (r.sku as string) ?? null, brand: (r.brand as string) ?? null,
-        image_url: (r.image_url as string) ?? null, category_name: (r.category_name as string) ?? null,
+        id: Number(r.id), name: r.name as string, sku: null as string | null, brand: (r.brand as string) ?? null,
+        image_url: null as string | null, category_name: (r.category_name as string) ?? null,
         stock: n(r.stock), low: n(r.low),
       })),
       bundlePerformance: (bundlePerf.rows as Record<string, unknown>[]).map((r) => {

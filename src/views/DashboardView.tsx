@@ -30,7 +30,7 @@ export function DashboardView({ onNav }: ViewProps) {
 
   useEffect(() => {
     Promise.all([fetchStats(), fetchSales({ limit: 5 })])
-      .then(([s, r]) => { setStats(s); setRecent(r.sales); })
+      .then(([s, salesRes]) => { setStats(s); setRecent(salesRes.sales.slice(0, 5)); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -168,16 +168,16 @@ export function DashboardView({ onNav }: ViewProps) {
             <div><h3>แจ้งเตือนสินค้าใกล้หมด</h3><div className="muted section-sub">มี {stats.lowStock.length} รายการที่ควรสั่งเพิ่ม</div></div>
           </div>
           <div className="table-wrap">
-            <table className="tbl tbl-cards">
+            <table className="tbl">
               <thead><tr><th>สินค้า</th><th>SKU</th><th style={{ textAlign: 'right' }}>คงเหลือ</th><th style={{ textAlign: 'right' }}>จุดสั่งซื้อ</th><th>สถานะ</th></tr></thead>
               <tbody>
                 {stats.lowStock.map((p) => (
                   <tr key={p.id}>
-                    <td className="cell-primary"><div className="product-cell"><Thumb url={p.image_url} /><div><div className="product-cell-name">{p.name}</div><div className="product-cell-meta">{p.brand || '—'}</div></div></div></td>
-                    <td className="mono" data-label="SKU">{p.sku || '—'}</td>
-                    <td className="num" data-label="คงเหลือ" style={{ textAlign: 'right' }}>{p.stock}</td>
-                    <td className="num muted" data-label="จุดสั่งซื้อ" style={{ textAlign: 'right' }}>{p.low}</td>
-                    <td data-label="สถานะ">{p.stock === 0 ? <span className="chip chip-neg chip-dot">หมดสต๊อก</span> : <span className="chip chip-warn chip-dot">เหลือน้อย</span>}</td>
+                    <td><div className="product-cell"><Thumb url={p.image_url} /><div><div className="product-cell-name">{p.name}</div><div className="product-cell-meta">{p.brand || '—'}</div></div></div></td>
+                    <td className="mono">{p.sku || '—'}</td>
+                    <td className="num" style={{ textAlign: 'right' }}>{p.stock}</td>
+                    <td className="num muted" style={{ textAlign: 'right' }}>{p.low}</td>
+                    <td>{p.stock === 0 ? <span className="chip chip-neg chip-dot">หมดสต๊อก</span> : <span className="chip chip-warn chip-dot">เหลือน้อย</span>}</td>
                   </tr>
                 ))}
                 {stats.lowStock.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', padding: 30 }} className="muted">ไม่มีสินค้าใกล้หมด 👍</td></tr>}
