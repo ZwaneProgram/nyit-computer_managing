@@ -445,12 +445,12 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
 
             <div className="table-wrap">
               <table className="tbl tbl-cards">
-                <thead><tr><th>Serial / SKU</th><th style={{ textAlign: 'right' }}>ราคาทุน</th><th style={{ textAlign: 'right' }}>ราคาขาย</th><th>รับประกัน</th><th>สถานะ</th><th style={{ width: 80 }} /></tr></thead>
+                <thead><tr><th>Serial / SKU</th><th style={{ textAlign: 'right' }}>ราคาทุน</th><th style={{ textAlign: 'right' }}>ราคาขาย</th><th>รับประกัน</th><th>เพิ่มเมื่อ</th><th>สถานะ</th><th style={{ width: 80 }} /></tr></thead>
                 <tbody>
                   {serials.map((s) => (
                     editId === s.id ? (
                       <tr key={s.id}>
-                        <td colSpan={6} style={{ padding: 14 }}>
+                        <td colSpan={7} style={{ padding: 14 }}>
                           <UnitFields value={editForm} onChange={setEditForm} onUploadError={showToast} />
                           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                             <button className="btn btn-primary btn-sm" disabled={busy} onClick={saveEdit}><Icons.check /> บันทึก</button>
@@ -475,6 +475,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                         <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{fmtTHB(s.cost)}</td>
                         <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(s.price)}</td>
                         <td data-label="รับประกัน"><span className="muted" style={{ fontSize: 12.5 }}>{s.warranty_months ? `${s.warranty_months} เดือน` : 'ไม่มี'}</span></td>
+                        <td data-label="เพิ่มเมื่อ"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(s.created_at).toLocaleDateString('en-GB')}</span></td>
                         <td data-label="สถานะ">{serialStatusChip(s.status)}</td>
                         <td className="cell-actions">
                           {s.status !== 'sold' && (
@@ -488,7 +489,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                     )
                   ))}
                   {serials.length === 0 && (
-                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30 }} className="muted">ยังไม่มีเครื่องในสต๊อก — กด "เพิ่มเครื่อง" ด้านบน</td></tr>
+                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: 30 }} className="muted">ยังไม่มีเครื่องในสต๊อก — กด "เพิ่มเครื่อง" ด้านบน</td></tr>
                   )}
                 </tbody>
               </table>
