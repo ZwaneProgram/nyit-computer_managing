@@ -16,6 +16,7 @@ import {
   type Serial,
   type UnitInput,
 } from '../data/inventory';
+import { WARRANTY_PRESETS, isPresetWarranty } from '../data/warranty';
 import { ApiError } from '../lib/api';
 import type { ViewId } from '../types';
 
@@ -25,7 +26,7 @@ interface ViewProps {
   onEditProduct: (id: number) => void;
 }
 
-type SortKey = 'name' | 'stock' | 'price';
+type SortKey = 'name' | 'stock' | 'price' | 'created';
 type StockFilter = 'all' | 'in' | 'out';
 
 /** Price range label for a catalog's in-stock units. */
@@ -46,7 +47,9 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<number | 'all'>('all');
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
-  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' });
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'created', dir: 'desc' });
   const [page, setPage] = useState(1);
   const perPage = 10;
 
@@ -54,13 +57,13 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
     setLoading(true);
     setError(null);
     try {
-      setProducts(await fetchProducts(tab === 'draft'));
+      setProducts(await fetchProducts({ drafts: tab === 'draft', from: dateFrom || undefined, to: dateTo || undefined }));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
     } finally {
       setLoading(false);
     }
-  }, [tab]);
+  }, [tab, dateFrom, dateTo]);
 
   useEffect(() => { loadList(); }, [loadList]);
   useEffect(() => { fetchCategories().then(setCats).catch(() => {}); }, []);
@@ -74,10 +77,14 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
       const s = q.toLowerCase();
       arr = arr.filter((p) =>
         p.name.toLowerCase().includes(s) ||
-        (p.brand ?? '').toLowerCase().includes(s));
+        (p.model ?? '').toLowerCase().includes(s));
     }
+    // Date-range filtering is done server-side (by unit added-dates).
     const sortVal = (p: Product): string | number =>
-      sort.key === 'name' ? p.name : sort.key === 'stock' ? p.stock : (p.price_min ?? 0);
+      sort.key === 'name' ? p.name
+        : sort.key === 'stock' ? p.stock
+        : sort.key === 'price' ? (p.price_min ?? 0)
+        : Date.parse(p.created_at);
     arr.sort((a, b) => {
       const va = sortVal(a); const vb = sortVal(b);
       const cmp = typeof va === 'string'
@@ -157,15 +164,20 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
       </div>
 
       <div className="card card-pad" style={{ paddingBottom: 0 }}>
-        <div className="filterbar" style={{ marginBottom: 16 }}>
+        <div className="filterbar" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
           <div className="search grow">
             <Icons.search />
-            <input placeholder="ค้นหาชื่อสินค้า หรือยี่ห้อ..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+            <input placeholder="ค้นหาชื่อสินค้า หรือรุ่น..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
           </div>
           <select className="select select-auto" value={cat} onChange={(e) => { setCat(e.target.value === 'all' ? 'all' : Number(e.target.value)); setPage(1); }}>
             <option value="all">ทุกหมวดหมู่</option>
             {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
+          <input className="input" type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} style={{ width: 'auto' }} title="เพิ่มตั้งแต่วันที่" />
+          <input className="input" type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} style={{ width: 'auto' }} title="ถึงวันที่" />
+          {(dateFrom || dateTo) && (
+            <button className="btn btn-sm btn-ghost" onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>ล้างตัวกรองวันที่</button>
+          )}
         </div>
 
         <div className="quick-filters">
@@ -184,6 +196,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                 <th>หมวด</th>
                 <SortHd k="stock" right>คงเหลือ</SortHd>
                 <SortHd k="price" right>ราคาขาย</SortHd>
+                <SortHd k="created">เพิ่มเมื่อ</SortHd>
                 <th>สถานะ</th>
                 <th style={{ width: 90 }} />
               </tr>
@@ -196,13 +209,15 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                       <div className="product-cell-name">
                         {p.name}
                         {p.draft_count > 0 && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>แบบร่าง {p.draft_count}</span>}
+                        {(dateFrom || dateTo) && <span className="chip chip-accent" style={{ marginLeft: 6, fontSize: 10 }}>เพิ่ม {p.added_in_range} เครื่องในช่วงนี้</span>}
                       </div>
-                      <div className="product-cell-meta">{p.brand || '—'}</div>
+                      <div className="product-cell-meta">{p.model || '—'}</div>
                     </div>
                   </td>
                   <td data-label="หมวด"><span className="muted" style={{ fontSize: 12.5 }}>{p.category_name || '—'}</span></td>
                   <td className="num" data-label="คงเหลือ" style={{ textAlign: 'right' }}>{p.stock}</td>
                   <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{priceLabel(p)}</td>
+                  <td data-label="เพิ่มเมื่อ"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(p.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}</span></td>
                   <td data-label="สถานะ">{statusChip(p)}</td>
                   <td className="cell-actions" style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
@@ -213,12 +228,12 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                 </tr>
               ))}
               {!loading && pageItems.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40 }} className="muted">
+                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">
                   {tab === 'draft' ? 'ไม่มีสินค้าที่มีเครื่องแบบร่าง' : 'ยังไม่มีสินค้า — กด "เพิ่มสินค้า" เพื่อเริ่ม'}
                 </td></tr>
               )}
               {loading && (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40 }} className="muted">กำลังโหลด...</td></tr>
+                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">กำลังโหลด...</td></tr>
               )}
             </tbody>
           </table>
@@ -252,9 +267,9 @@ interface DetailProps {
 }
 
 /** Blank unit form values. */
-const blankUnit = (): UnitFormState => ({ serial: '', sku: '', cost: '', price: '', warranty: '36', note: '', image_url: null, draft: false });
+const blankUnit = (): UnitFormState => ({ serial: '', sku: '', cost: '', price: '', warranty: '36', warrantyCustom: false, note: '', image_url: null, draft: false });
 interface UnitFormState {
-  serial: string; sku: string; cost: string; price: string; warranty: string; note: string; image_url: string | null; draft: boolean;
+  serial: string; sku: string; cost: string; price: string; warranty: string; warrantyCustom: boolean; note: string; image_url: string | null; draft: boolean;
 }
 const toUnitInput = (u: UnitFormState): UnitInput => ({
   serial: u.serial.trim(),
@@ -314,6 +329,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
     setEditForm({
       serial: s.serial, sku: s.sku ?? '', cost: s.cost ? String(s.cost) : '',
       price: s.price ? String(s.price) : '', warranty: String(s.warranty_months),
+      warrantyCustom: !isPresetWarranty(String(s.warranty_months)),
       note: s.note ?? '', image_url: s.image_url, draft: s.status === 'draft',
     });
   };
@@ -392,7 +408,6 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
         <div className="col-span-12 lg:col-span-4">
           <div className="card card-pad">
             <div className="summary-box">
-              <div className="summary-row"><span className="muted">ยี่ห้อ</span><span>{product.brand || '—'}</span></div>
               <div className="summary-row"><span className="muted">รุ่น</span><span>{product.model || '—'}</span></div>
               <div className="summary-row"><span className="muted">คงเหลือ</span><span className="num">{inStock} เครื่อง</span></div>
               <div className="summary-row"><span className="muted">ช่วงราคาขาย</span><span className="num">{priceLabel(product)}</span></div>
@@ -422,12 +437,12 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
 
             <div className="table-wrap">
               <table className="tbl tbl-cards">
-                <thead><tr><th>Serial / SKU</th><th style={{ textAlign: 'right' }}>ราคาทุน</th><th style={{ textAlign: 'right' }}>ราคาขาย</th><th>รับประกัน</th><th>สถานะ</th><th style={{ width: 80 }} /></tr></thead>
+                <thead><tr><th>Serial / SKU</th><th style={{ textAlign: 'right' }}>ราคาทุน</th><th style={{ textAlign: 'right' }}>ราคาขาย</th><th>รับประกัน</th><th>เพิ่มเมื่อ</th><th>สถานะ</th><th style={{ width: 80 }} /></tr></thead>
                 <tbody>
                   {serials.map((s) => (
                     editId === s.id ? (
                       <tr key={s.id}>
-                        <td colSpan={6} style={{ padding: 14 }}>
+                        <td colSpan={7} style={{ padding: 14 }}>
                           <UnitFields value={editForm} onChange={setEditForm} onUploadError={showToast} />
                           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                             <button className="btn btn-primary btn-sm" disabled={busy} onClick={saveEdit}><Icons.check /> บันทึก</button>
@@ -452,6 +467,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                         <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{fmtTHB(s.cost)}</td>
                         <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(s.price)}</td>
                         <td data-label="รับประกัน"><span className="muted" style={{ fontSize: 12.5 }}>{s.warranty_months ? `${s.warranty_months} เดือน` : 'ไม่มี'}</span></td>
+                        <td data-label="เพิ่มเมื่อ"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(s.created_at).toLocaleDateString('en-GB')}</span></td>
                         <td data-label="สถานะ">{serialStatusChip(s.status)}</td>
                         <td className="cell-actions">
                           {s.status !== 'sold' && (
@@ -465,7 +481,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                     )
                   ))}
                   {serials.length === 0 && (
-                    <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30 }} className="muted">ยังไม่มีเครื่องในสต๊อก — กด "เพิ่มเครื่อง" ด้านบน</td></tr>
+                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: 30 }} className="muted">ยังไม่มีเครื่องในสต๊อก — กด "เพิ่มเครื่อง" ด้านบน</td></tr>
                   )}
                 </tbody>
               </table>
@@ -500,8 +516,21 @@ function UnitFields({ value, onChange, onUploadError }: {
         <input className="input mono" placeholder="SKU001" value={value.sku} onChange={(e) => set({ sku: e.target.value })} />
       </div>
       <div className="field">
-        <label className="field-label">รับประกัน (เดือน)</label>
-        <input className="input num" type="number" min="0" placeholder="0" value={value.warranty} onChange={(e) => set({ warranty: e.target.value })} />
+        <label className="field-label">รับประกัน</label>
+        <select
+          className="select"
+          value={value.warrantyCustom ? 'custom' : value.warranty}
+          onChange={(e) => {
+            if (e.target.value === 'custom') set({ warrantyCustom: true });
+            else set({ warrantyCustom: false, warranty: e.target.value });
+          }}
+        >
+          {WARRANTY_PRESETS.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
+          <option value="custom">อื่นๆ (กำหนดเอง)</option>
+        </select>
+        {value.warrantyCustom && (
+          <input className="input num" style={{ marginTop: 6 }} type="number" min="0" placeholder="ระบุจำนวนเดือน" value={isPresetWarranty(value.warranty) ? '' : value.warranty} onChange={(e) => set({ warranty: e.target.value })} autoFocus />
+        )}
       </div>
       <div className="field">
         <label className="field-label">ราคาทุน (บาท)</label>

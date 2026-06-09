@@ -69,7 +69,7 @@ export function BundlesView({ showToast }: ViewProps) {
 
   const visible = products.filter((p) => {
     if (filterCat !== 'all' && p.category_id !== filterCat) return false;
-    if (q && !p.name.toLowerCase().includes(q.toLowerCase()) && !(p.brand ?? '').toLowerCase().includes(q.toLowerCase())) return false;
+    if (q && !p.name.toLowerCase().includes(q.toLowerCase()) && !(p.model ?? '').toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   });
 
@@ -228,7 +228,7 @@ export function BundlesView({ showToast }: ViewProps) {
                     <Thumb url={null} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 500 }}>{p.name}</div>
-                      <div className="muted mono" style={{ fontSize: 11.5, marginTop: 1 }}>{p.brand || '—'} · คงเหลือ {p.stock}</div>
+                      <div className="muted mono" style={{ fontSize: 11.5, marginTop: 1 }}>{p.model || '—'} · คงเหลือ {p.stock}</div>
                     </div>
                     <div className="num" style={{ fontWeight: 600 }}>{p.price_min == null ? '—' : `${fmtTHB(p.price_min)}+`}</div>
                     <div className="pick-check" data-on={isSel}>{isSel && <Icons.check style={{ width: 12, height: 12 }} />}</div>
@@ -260,7 +260,7 @@ export function BundlesView({ showToast }: ViewProps) {
                         <Thumb url={null} />
                         <div style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>
                           <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                          <div className="muted mono" style={{ fontSize: 11 }}>{p.brand || '—'}</div>
+                          <div className="muted mono" style={{ fontSize: 11 }}>{p.model || '—'}</div>
                         </div>
                         <div className="num" style={{ fontSize: 12.5 }}>{p.price_min == null ? '—' : fmtTHB(p.price_min)}</div>
                         <button type="button" className="btn btn-sm btn-icon btn-ghost" onClick={() => setSelected((s) => s.filter((x) => x !== id))}><Icons.x /></button>
