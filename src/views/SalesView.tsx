@@ -45,7 +45,7 @@ export function SalesView({ showToast }: ViewProps) {
   const HISTORY_PER_PAGE = 25;
 
   const loadProducts = useCallback(() => {
-    fetchProducts('active').then(setProducts).catch(() => {});
+    fetchProducts().then(setProducts).catch(() => {});
     fetchBundles().then(setBundles).catch(() => {});
   }, []);
   useEffect(() => { loadProducts(); }, [loadProducts]);

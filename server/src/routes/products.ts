@@ -11,6 +11,7 @@ interface UnitInput {
   warranty_months?: number;
   note?: string | null;
   image_url?: string | null;
+  draft?: boolean;
 }
 
 interface ProductBody {
@@ -34,6 +35,7 @@ interface CleanUnit {
   warranty_months: number;
   note: string | null;
   image_url: string | null;
+  draft: boolean;
 }
 
 /** Clean a unit list: trim serials, drop blank-serial rows, de-dupe by serial. */
@@ -56,6 +58,7 @@ function cleanUnits(input: unknown): CleanUnit[] {
       warranty_months: Number(u.warranty_months) || 0,
       note: u.note?.toString().trim() || null,
       image_url: u.image_url ?? null,
+      draft: u.draft === true,
     });
   }
   return out;
@@ -74,12 +77,14 @@ function conflictMessage(err: unknown): string | null {
 const PRODUCT_SELECT = `
   select p.*, c.name as category_name, c.slug as category_slug,
          coalesce(s.in_stock, 0)::int as stock,
+         coalesce(s.draft_count, 0)::int as draft_count,
          s.price_min, s.price_max, s.cost_min, coalesce(s.stock_cost, 0) as stock_cost
     from products p
     left join categories c on c.id = p.category_id
     left join (
       select product_id,
              count(*) filter (where status = 'in_stock') as in_stock,
+             count(*) filter (where status = 'draft')    as draft_count,
              min(price) filter (where status = 'in_stock') as price_min,
              max(price) filter (where status = 'in_stock') as price_max,
              min(cost)  filter (where status = 'in_stock') as cost_min,
@@ -92,13 +97,13 @@ const UNIT_RETURN = 'id, serial, sku, status, cost, price, warranty_months, note
 export async function productRoutes(app: FastifyInstance) {
   const guard = { preHandler: requireAuth() };
 
-  // List products. ?status=active (default) | draft | all
+  // List catalogs. ?drafts=1 → only catalogs that contain at least one draft
+  // unit; otherwise all catalogs.
   app.get('/api/products', async (req) => {
-    const { status = 'active' } = req.query as { status?: string };
-    const filter = ['active', 'draft', 'all'].includes(status) ? status : 'active';
+    const onlyDrafts = (req.query as { drafts?: string }).drafts === '1';
     const { rows } = await query(
-      `${PRODUCT_SELECT} where ($1 = 'all' or p.status = $1) order by p.name`,
-      [filter],
+      `${PRODUCT_SELECT} where ($1::bool is false or coalesce(s.draft_count, 0) > 0) order by p.name`,
+      [onlyDrafts],
     );
     return { products: rows };
   });
@@ -136,13 +141,13 @@ export async function productRoutes(app: FastifyInstance) {
       const product = rows[0];
       for (const u of units) {
         await client.query(
-          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, note, image_url)
-           values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [product.id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url],
+          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, note, image_url, status)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [product.id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url, u.draft ? 'draft' : 'in_stock'],
         );
       }
       await client.query('commit');
-      return reply.code(201).send({ product: { ...product, stock: units.length } });
+      return reply.code(201).send({ product: { ...product, stock: units.filter((u) => !u.draft).length } });
     } catch (err) {
       await client.query('rollback');
       const msg = conflictMessage(err);
@@ -196,10 +201,10 @@ export async function productRoutes(app: FastifyInstance) {
       const added = [];
       for (const u of units) {
         const { rows } = await client.query(
-          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, note, image_url)
-           values ($1,$2,$3,$4,$5,$6,$7,$8)
+          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, note, image_url, status)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
            returning ${UNIT_RETURN}`,
-          [id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url],
+          [id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url, u.draft ? 'draft' : 'in_stock'],
         );
         added.push(rows[0]);
       }
@@ -226,9 +231,9 @@ export async function productRoutes(app: FastifyInstance) {
     try {
       const { rows } = await query(
         `update product_serials set serial = $1, sku = $2, cost = $3, price = $4,
-           warranty_months = $5, note = $6, image_url = $7 where id = $8
+           warranty_months = $5, note = $6, image_url = $7, status = $8 where id = $9
          returning ${UNIT_RETURN}`,
-        [u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url, serialId],
+        [u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url, u.draft ? 'draft' : 'in_stock', serialId],
       );
       return { serial: rows[0] };
     } catch (err) {

@@ -9,7 +9,6 @@ import {
   uploadImage,
   type Category,
   type ProductInput,
-  type ProductStatus,
 } from '../data/inventory';
 import { fetchSettings } from '../data/settings';
 import { ApiError } from '../lib/api';
@@ -43,6 +42,7 @@ interface UnitDraft {
   warrantyCustom: boolean;
   note: string;
   image_url: string | null;
+  draft: boolean;
 }
 const emptyUnit = (from?: UnitDraft): UnitDraft => ({
   serial: '',
@@ -53,6 +53,7 @@ const emptyUnit = (from?: UnitDraft): UnitDraft => ({
   warrantyCustom: from?.warrantyCustom ?? false,
   note: '',
   image_url: null,
+  draft: false,
 });
 
 export function AddProductView({ onNav, showToast, editId }: ViewProps) {
@@ -118,7 +119,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
     }
   };
 
-  const save = async (status: ProductStatus) => {
+  const save = async () => {
     setError(null);
     if (!form.name.trim()) return setError('กรุณากรอกชื่อสินค้า');
 
@@ -129,7 +130,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
       model: form.model.trim() || null,
       low: Number(form.low) || 0,
       notes: form.notes.trim() || null,
-      status,
+      status: 'active',
       // Units only on create; edit mode manages them on the detail page.
       ...(isEdit ? {} : {
         units: units
@@ -142,6 +143,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
             warranty_months: Number(u.warranty) || 0,
             note: u.note.trim() || null,
             image_url: u.image_url,
+            draft: u.draft,
           })),
       }),
     };
@@ -149,10 +151,10 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
     try {
       if (isEdit && editId != null) {
         await updateProduct(editId, input);
-        showToast(status === 'draft' ? 'ย้ายไปแบบร่างแล้ว' : 'บันทึกการแก้ไขแล้ว');
+        showToast('บันทึกการแก้ไขแล้ว');
       } else {
         await createProduct(input);
-        showToast(status === 'draft' ? 'บันทึกแบบร่างแล้ว' : 'บันทึกสินค้าใหม่เรียบร้อย');
+        showToast('บันทึกสินค้าใหม่เรียบร้อย');
       }
       onNav('inventory');
     } catch (err) {
@@ -164,7 +166,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    save('active');
+    save();
   };
 
   return (
@@ -176,7 +178,6 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
           <div className="muted page-subtitle">{isEdit ? 'แก้ไขข้อมูลแคตตาล็อก (จัดการแต่ละเครื่องได้ในหน้ารายละเอียดสินค้า)' : 'กรอกข้อมูลแคตตาล็อก แล้วเพิ่มเครื่องแต่ละชิ้นพร้อมราคา/รับประกัน/รูปของชิ้นนั้น'}</div>
         </div>
         <div className="page-head-actions">
-          <button type="button" className="btn" disabled={busy} onClick={() => save('draft')}>บันทึกแบบร่าง</button>
           <button type="submit" className="btn btn-primary" disabled={busy}><Icons.check /> {busy ? 'กำลังบันทึก...' : isEdit ? 'บันทึกการแก้ไข' : 'บันทึกสินค้า'}</button>
         </div>
       </div>
@@ -296,6 +297,12 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
                       <div className="field" style={{ gridColumn: '1 / -1' }}>
                         <label className="field-label">โน้ต (เฉพาะเครื่องนี้)</label>
                         <input className="input" placeholder="เช่น กล่องบุบ, ของโชว์" value={u.note} onChange={(e) => setUnit(i, { note: e.target.value })} />
+                      </div>
+                      <div className="field" style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={u.draft} onChange={(e) => setUnit(i, { draft: e.target.checked })} />
+                          <span className="field-label" style={{ margin: 0 }}>บันทึกเป็นแบบร่าง (ยังขายไม่ได้)</span>
+                        </label>
                       </div>
                       <div className="field" style={{ gridColumn: '1 / -1' }}>
                         <label className="field-label">รูปของเครื่องนี้</label>

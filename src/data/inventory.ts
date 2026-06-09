@@ -3,7 +3,7 @@
 import { http } from '../lib/api';
 
 export type ProductStatus = 'active' | 'draft';
-export type SerialStatus = 'in_stock' | 'sold' | 'returned';
+export type SerialStatus = 'draft' | 'in_stock' | 'sold' | 'returned';
 
 export interface Category {
   id: number;
@@ -40,6 +40,8 @@ export interface Product {
   status: ProductStatus;
   /** Derived: count of in_stock units. */
   stock: number;
+  /** Derived: count of draft units. */
+  draft_count: number;
   /** Price range of in-stock units (null when none). */
   price_min: number | null;
   price_max: number | null;
@@ -60,6 +62,7 @@ export interface UnitInput {
   warranty_months: number;
   note: string | null;
   image_url: string | null;
+  draft: boolean;
 }
 
 /** Catalog fields the create/update form sends. */
@@ -89,6 +92,7 @@ function normProduct(r: Record<string, unknown>): Product {
     notes: (r.notes as string) ?? null,
     status: (r.status as ProductStatus) ?? 'active',
     stock: n(r.stock),
+    draft_count: n(r.draft_count),
     price_min: r.price_min == null ? null : n(r.price_min),
     price_max: r.price_max == null ? null : n(r.price_max),
     cost_min: r.cost_min == null ? null : n(r.cost_min),
@@ -137,9 +141,10 @@ export async function deleteCategory(id: number): Promise<void> {
 }
 
 // ----- Products -----
-export async function fetchProducts(status: ProductStatus | 'all' = 'active'): Promise<Product[]> {
+// drafts=true → only catalogs that contain at least one draft unit.
+export async function fetchProducts(drafts = false): Promise<Product[]> {
   const { products } = await http.get<{ products: Record<string, unknown>[] }>(
-    `/api/products?status=${status}`,
+    `/api/products${drafts ? '?drafts=1' : ''}`,
   );
   return products.map(normProduct);
 }

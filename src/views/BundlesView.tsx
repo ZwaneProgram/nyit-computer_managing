@@ -51,7 +51,7 @@ export function BundlesView({ showToast }: ViewProps) {
 
   useEffect(() => { loadList(); }, [loadList]);
   useEffect(() => {
-    fetchProducts('active').then(setProducts).catch(() => {});
+    fetchProducts().then(setProducts).catch(() => {});
     fetchCategories().then(setCats).catch(() => {});
   }, []);
 
