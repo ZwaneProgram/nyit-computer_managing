@@ -147,7 +147,7 @@ export async function productRoutes(app: FastifyInstance) {
         );
       }
       await client.query('commit');
-      return reply.code(201).send({ product: { ...product, stock: units.length } });
+      return reply.code(201).send({ product: { ...product, stock: units.filter((u) => !u.draft).length } });
     } catch (err) {
       await client.query('rollback');
       const msg = conflictMessage(err);
