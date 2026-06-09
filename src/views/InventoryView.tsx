@@ -454,7 +454,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                         <td data-label="รับประกัน"><span className="muted" style={{ fontSize: 12.5 }}>{s.warranty_months ? `${s.warranty_months} เดือน` : 'ไม่มี'}</span></td>
                         <td data-label="สถานะ">{serialStatusChip(s.status)}</td>
                         <td className="cell-actions">
-                          {s.status === 'in_stock' && (
+                          {s.status !== 'sold' && (
                             <div style={{ display: 'inline-flex', gap: 4 }}>
                               <button className="btn btn-sm btn-icon btn-ghost" title="แก้ไขเครื่องนี้" onClick={() => startEdit(s)}><Icons.edit /></button>
                               <button className="btn btn-sm btn-icon btn-ghost" title="ลบเครื่องนี้" onClick={() => removeSerial(s)}><Icons.trash /></button>
@@ -493,7 +493,7 @@ function UnitFields({ value, onChange, onUploadError }: {
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[14px]">
       <div className="field">
         <label className="field-label">Serial Number *</label>
-        <input className="input mono" placeholder="SN-XXXX" value={value.serial} onChange={(e) => set({ serial: e.target.value })} />
+        <input className="input mono" placeholder="..." value={value.serial} onChange={(e) => set({ serial: e.target.value })} />
       </div>
       <div className="field">
         <label className="field-label">SKU (ไม่บังคับ)</label>
@@ -528,13 +528,13 @@ function UnitFields({ value, onChange, onUploadError }: {
         )}
       </div>
       <div className="field" style={{ gridColumn: '1 / -1' }}>
-        <label className="field-label">โน้ต (เฉพาะเครื่องนี้)</label>
+        <label className="field-label">โน้ต  </label>
         <input className="input" placeholder="เช่น กล่องบุบ, ของโชว์" value={value.note} onChange={(e) => set({ note: e.target.value })} />
       </div>
       <div className="field" style={{ gridColumn: '1 / -1' }}>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
           <input type="checkbox" checked={value.draft} onChange={(e) => set({ draft: e.target.checked })} />
-          <span className="field-label" style={{ margin: 0 }}>บันทึกเป็นแบบร่าง (ยังขายไม่ได้)</span>
+          <span className="field-label" style={{ margin: 0 }}>บันทึกเป็นแบบร่าง</span>
         </label>
       </div>
     </div>
