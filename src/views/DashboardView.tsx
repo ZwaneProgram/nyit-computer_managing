@@ -69,7 +69,7 @@ export function DashboardView({ onNav }: ViewProps) {
         </div>
       </div>
 
-      <div className="grid grid-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {kpis.map((kpi, i) => (
           <div key={i} className="card kpi">
             <div className="kpi-label">{kpi.label}</div>
@@ -85,8 +85,8 @@ export function DashboardView({ onNav }: ViewProps) {
         ))}
       </div>
 
-      <div className="grid grid-12">
-        <div className="card col-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12">
+        <div className="card col-span-12 lg:col-span-8">
           <div className="card-pad">
             <div className="section-h">
               <div><h3>ภาพรวมยอดขาย — 7 วันล่าสุด</h3><div className="muted section-sub">เทียบกับสัปดาห์ก่อนหน้า</div></div>
@@ -102,7 +102,7 @@ export function DashboardView({ onNav }: ViewProps) {
           </div>
         </div>
 
-        <div className="card col-4">
+        <div className="card col-span-12 lg:col-span-4">
           <div className="card-pad">
             <div className="section-h"><div><h3>สัดส่วนยอดขายตามหมวด</h3><div className="muted section-sub">จากการขายทั้งหมด</div></div></div>
             {donut.length ? (
@@ -120,8 +120,8 @@ export function DashboardView({ onNav }: ViewProps) {
         </div>
       </div>
 
-      <div className="grid grid-12">
-        <div className="card col-7">
+      <div className="grid grid-cols-1 lg:grid-cols-12">
+        <div className="card col-span-12 lg:col-span-7">
           <div className="card-pad">
             <div className="section-h">
               <div><h3>สินค้าขายดี</h3><div className="muted section-sub">จากการขายทั้งหมด</div></div>
@@ -142,7 +142,7 @@ export function DashboardView({ onNav }: ViewProps) {
           </div>
         </div>
 
-        <div className="card col-5">
+        <div className="card col-span-12 lg:col-span-5">
           <div className="card-pad">
             <div className="section-h"><div><h3>ธุรกรรมล่าสุด</h3></div><div className="spacer" />
               <button className="btn btn-sm btn-ghost" onClick={() => onNav('sales')}>ทั้งหมด <Icons.arrowRight /></button>
