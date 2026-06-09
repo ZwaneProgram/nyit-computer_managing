@@ -54,7 +54,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
     setLoading(true);
     setError(null);
     try {
-      setProducts(await fetchProducts(tab));
+      setProducts(await fetchProducts(tab === 'draft'));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
     } finally {
@@ -193,7 +193,10 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                 <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => setDetailId(p.id)}>
                   <td className="cell-primary">
                     <div>
-                      <div className="product-cell-name">{p.name}</div>
+                      <div className="product-cell-name">
+                        {p.name}
+                        {p.draft_count > 0 && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>แบบร่าง {p.draft_count}</span>}
+                      </div>
                       <div className="product-cell-meta">{p.brand || '—'}</div>
                     </div>
                   </td>
@@ -211,7 +214,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
               ))}
               {!loading && pageItems.length === 0 && (
                 <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40 }} className="muted">
-                  {tab === 'draft' ? 'ยังไม่มีแบบร่าง' : 'ยังไม่มีสินค้า — กด "เพิ่มสินค้า" เพื่อเริ่ม'}
+                  {tab === 'draft' ? 'ไม่มีสินค้าที่มีเครื่องแบบร่าง' : 'ยังไม่มีสินค้า — กด "เพิ่มสินค้า" เพื่อเริ่ม'}
                 </td></tr>
               )}
               {loading && (
@@ -249,9 +252,9 @@ interface DetailProps {
 }
 
 /** Blank unit form values. */
-const blankUnit = (): UnitFormState => ({ serial: '', sku: '', cost: '', price: '', warranty: '36', note: '', image_url: null });
+const blankUnit = (): UnitFormState => ({ serial: '', sku: '', cost: '', price: '', warranty: '36', note: '', image_url: null, draft: false });
 interface UnitFormState {
-  serial: string; sku: string; cost: string; price: string; warranty: string; note: string; image_url: string | null;
+  serial: string; sku: string; cost: string; price: string; warranty: string; note: string; image_url: string | null; draft: boolean;
 }
 const toUnitInput = (u: UnitFormState): UnitInput => ({
   serial: u.serial.trim(),
@@ -261,6 +264,7 @@ const toUnitInput = (u: UnitFormState): UnitInput => ({
   warranty_months: Number(u.warranty) || 0,
   note: u.note.trim() || null,
   image_url: u.image_url,
+  draft: u.draft,
 });
 
 function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps) {
@@ -310,7 +314,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
     setEditForm({
       serial: s.serial, sku: s.sku ?? '', cost: s.cost ? String(s.cost) : '',
       price: s.price ? String(s.price) : '', warranty: String(s.warranty_months),
-      note: s.note ?? '', image_url: s.image_url,
+      note: s.note ?? '', image_url: s.image_url, draft: s.status === 'draft',
     });
   };
 
@@ -362,7 +366,9 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
   );
 
   const inStock = serials.filter((s) => s.status === 'in_stock').length;
+  const draftCount = serials.filter((s) => s.status === 'draft').length;
   const serialStatusChip = (s: Serial['status']) => {
+    if (s === 'draft') return <span className="chip chip-dot">แบบร่าง</span>;
     if (s === 'in_stock') return <span className="chip chip-pos chip-dot">ในสต๊อก</span>;
     if (s === 'sold') return <span className="chip chip-dot">ขายแล้ว</span>;
     return <span className="chip chip-warn chip-dot">คืน</span>;
@@ -399,7 +405,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
         <div className="col-span-12 lg:col-span-8">
           <div className="card card-pad">
             <div className="section-h">
-              <div><h3>เครื่องในสต๊อก ({inStock})</h3><div className="muted section-sub">แต่ละเครื่องมีราคา/รับประกัน/รูปของตัวเอง · รวม {serials.length} รายการ</div></div>
+              <div><h3>เครื่องในสต๊อก ({inStock})</h3><div className="muted section-sub">แต่ละเครื่องมีราคา/รับประกัน/รูปของตัวเอง · รวม {serials.length} รายการ{draftCount > 0 ? ` · แบบร่าง ${draftCount}` : ''}</div></div>
               <div className="spacer" />
               {!adding && <button type="button" className="btn btn-sm btn-primary" onClick={() => setAdding(true)}><Icons.plus /> เพิ่มเครื่อง</button>}
             </div>
@@ -432,9 +438,16 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                     ) : (
                       <tr key={s.id}>
                         <td className="cell-primary">
-                          <div className="mono" style={{ fontSize: 12.5 }}>{s.serial}</div>
-                          {s.sku && <div className="mono muted" style={{ fontSize: 11 }}>{s.sku}</div>}
-                          {s.note && <div className="muted" style={{ fontSize: 11 }}>{s.note}</div>}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            {s.image_url
+                              ? <a href={s.image_url} target="_blank" rel="noreferrer" title="ดูรูปเต็ม"><img src={s.image_url} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 'var(--r-md)', background: 'var(--surface-sunk)', display: 'block' }} /></a>
+                              : <div style={{ width: 40, height: 40, borderRadius: 'var(--r-md)', background: 'var(--surface-sunk)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, color: 'var(--ink-4)', flexShrink: 0 }}>ไม่มีรูป</div>}
+                            <div style={{ minWidth: 0 }}>
+                              <div className="mono" style={{ fontSize: 12.5 }}>{s.serial}</div>
+                              {s.sku && <div className="mono muted" style={{ fontSize: 11 }}>{s.sku}</div>}
+                              {s.note && <div className="muted" style={{ fontSize: 11 }}>{s.note}</div>}
+                            </div>
+                          </div>
                         </td>
                         <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{fmtTHB(s.cost)}</td>
                         <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(s.price)}</td>
@@ -517,6 +530,12 @@ function UnitFields({ value, onChange, onUploadError }: {
       <div className="field" style={{ gridColumn: '1 / -1' }}>
         <label className="field-label">โน้ต (เฉพาะเครื่องนี้)</label>
         <input className="input" placeholder="เช่น กล่องบุบ, ของโชว์" value={value.note} onChange={(e) => set({ note: e.target.value })} />
+      </div>
+      <div className="field" style={{ gridColumn: '1 / -1' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+          <input type="checkbox" checked={value.draft} onChange={(e) => set({ draft: e.target.checked })} />
+          <span className="field-label" style={{ margin: 0 }}>บันทึกเป็นแบบร่าง (ยังขายไม่ได้)</span>
+        </label>
       </div>
     </div>
   );

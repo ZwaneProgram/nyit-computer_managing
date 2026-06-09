@@ -46,7 +46,7 @@ create table if not exists product_serials (
   warranty_months int not null default 0,
   note            text,
   image_url       text,
-  status          text not null default 'in_stock' check (status in ('in_stock', 'sold', 'returned')),
+  status          text not null default 'in_stock' check (status in ('draft', 'in_stock', 'sold', 'returned')),
   sale_id         bigint, -- FK added after sales table exists (see bottom)
   created_at      timestamptz not null default now()
 );
@@ -182,6 +182,18 @@ alter table products drop column if exists cost;
 alter table products drop column if exists price;
 alter table products drop column if exists warranty_months;
 alter table products drop column if exists image_url;
+
+-- Per-unit draft (2026-06-09): a unit can be 'draft' (recorded but not stock,
+-- not sellable). Widen the status check + flip old draft catalogs to active.
+do $$
+begin
+  if exists (select 1 from pg_constraint where conname = 'product_serials_status_check') then
+    alter table product_serials drop constraint product_serials_status_check;
+  end if;
+  alter table product_serials add constraint product_serials_status_check
+    check (status in ('draft', 'in_stock', 'sold', 'returned'));
+end $$;
+update products set status = 'active' where status = 'draft';
 
 -- Account roles (added 2026-06-03): owner manages accounts + settings, staff
 -- just uses the shop. Converge older DBs: add the column, then make sure there
