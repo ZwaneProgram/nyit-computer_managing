@@ -29,13 +29,6 @@ interface ViewProps {
 type SortKey = 'name' | 'stock' | 'price' | 'created';
 type StockFilter = 'all' | 'in' | 'out';
 
-/** Local YYYY-MM-DD for a timestamp (for date-range filtering + display). */
-function localDay(ts: string): string {
-  const d = new Date(ts);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
 /** Price range label for a catalog's in-stock units. */
 function priceLabel(p: Product): string {
   if (p.price_min == null) return '—';
@@ -64,13 +57,13 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
     setLoading(true);
     setError(null);
     try {
-      setProducts(await fetchProducts(tab === 'draft'));
+      setProducts(await fetchProducts({ drafts: tab === 'draft', from: dateFrom || undefined, to: dateTo || undefined }));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'โหลดข้อมูลไม่สำเร็จ');
     } finally {
       setLoading(false);
     }
-  }, [tab]);
+  }, [tab, dateFrom, dateTo]);
 
   useEffect(() => { loadList(); }, [loadList]);
   useEffect(() => { fetchCategories().then(setCats).catch(() => {}); }, []);
@@ -86,9 +79,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
         p.name.toLowerCase().includes(s) ||
         (p.model ?? '').toLowerCase().includes(s));
     }
-    // Date-range filter on the catalog's created date (local day, inclusive).
-    if (dateFrom) arr = arr.filter((p) => localDay(p.created_at) >= dateFrom);
-    if (dateTo) arr = arr.filter((p) => localDay(p.created_at) <= dateTo);
+    // Date-range filtering is done server-side (by unit added-dates).
     const sortVal = (p: Product): string | number =>
       sort.key === 'name' ? p.name
         : sort.key === 'stock' ? p.stock
@@ -102,7 +93,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
       return sort.dir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [products, q, cat, stockFilter, dateFrom, dateTo, sort]);
+  }, [products, q, cat, stockFilter, sort]);
 
   const pageItems = filtered.slice((page - 1) * perPage, page * perPage);
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
@@ -218,6 +209,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                       <div className="product-cell-name">
                         {p.name}
                         {p.draft_count > 0 && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>แบบร่าง {p.draft_count}</span>}
+                        {(dateFrom || dateTo) && <span className="chip chip-accent" style={{ marginLeft: 6, fontSize: 10 }}>เพิ่ม {p.added_in_range} เครื่องในช่วงนี้</span>}
                       </div>
                       <div className="product-cell-meta">{p.model || '—'}</div>
                     </div>

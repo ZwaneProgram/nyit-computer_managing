@@ -42,6 +42,8 @@ export interface Product {
   stock: number;
   /** Derived: count of draft units. */
   draft_count: number;
+  /** When a date filter is active: how many units were added in that range. */
+  added_in_range: number;
   /** Price range of in-stock units (null when none). */
   price_min: number | null;
   price_max: number | null;
@@ -93,6 +95,7 @@ function normProduct(r: Record<string, unknown>): Product {
     status: (r.status as ProductStatus) ?? 'active',
     stock: n(r.stock),
     draft_count: n(r.draft_count),
+    added_in_range: n(r.added_in_range),
     price_min: r.price_min == null ? null : n(r.price_min),
     price_max: r.price_max == null ? null : n(r.price_max),
     cost_min: r.cost_min == null ? null : n(r.cost_min),
@@ -141,10 +144,17 @@ export async function deleteCategory(id: number): Promise<void> {
 }
 
 // ----- Products -----
-// drafts=true → only catalogs that contain at least one draft unit.
-export async function fetchProducts(drafts = false): Promise<Product[]> {
+// drafts → only catalogs that contain ≥1 draft unit.
+// from/to (YYYY-MM-DD) → only catalogs with ≥1 unit added in that date range;
+//   each Product then carries added_in_range (units added in range).
+export async function fetchProducts(opts: { drafts?: boolean; from?: string; to?: string } = {}): Promise<Product[]> {
+  const sp = new URLSearchParams();
+  if (opts.drafts) sp.set('drafts', '1');
+  if (opts.from) sp.set('from', opts.from);
+  if (opts.to) sp.set('to', opts.to);
+  const qs = sp.toString();
   const { products } = await http.get<{ products: Record<string, unknown>[] }>(
-    `/api/products${drafts ? '?drafts=1' : ''}`,
+    `/api/products${qs ? `?${qs}` : ''}`,
   );
   return products.map(normProduct);
 }

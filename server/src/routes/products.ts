@@ -97,13 +97,42 @@ const UNIT_RETURN = 'id, serial, sku, status, cost, price, warranty_months, note
 export async function productRoutes(app: FastifyInstance) {
   const guard = { preHandler: requireAuth() };
 
-  // List catalogs. ?drafts=1 → only catalogs that contain at least one draft
-  // unit; otherwise all catalogs.
+  // List catalogs.
+  //   ?drafts=1     → only catalogs that contain at least one draft unit.
+  //   ?from=&to=    → only catalogs that had at least one UNIT added in the date
+  //                   range (by product_serials.created_at, inclusive); each row
+  //                   also returns added_in_range = how many units fell in range.
   app.get('/api/products', async (req) => {
-    const onlyDrafts = (req.query as { drafts?: string }).drafts === '1';
+    const q = req.query as { drafts?: string; from?: string; to?: string };
+    const onlyDrafts = q.drafts === '1';
+    const from = q.from?.trim() || null;
+    const to = q.to?.trim() || null;
     const { rows } = await query(
-      `${PRODUCT_SELECT} where ($1::bool is false or coalesce(s.draft_count, 0) > 0) order by p.name`,
-      [onlyDrafts],
+      `select p.*, c.name as category_name, c.slug as category_slug,
+              coalesce(s.in_stock, 0)::int as stock,
+              coalesce(s.draft_count, 0)::int as draft_count,
+              s.price_min, s.price_max, s.cost_min, coalesce(s.stock_cost, 0) as stock_cost,
+              coalesce(s.added_in_range, 0)::int as added_in_range
+         from products p
+         left join categories c on c.id = p.category_id
+         left join (
+           select product_id,
+                  count(*) filter (where status = 'in_stock') as in_stock,
+                  count(*) filter (where status = 'draft')    as draft_count,
+                  min(price) filter (where status = 'in_stock') as price_min,
+                  max(price) filter (where status = 'in_stock') as price_max,
+                  min(cost)  filter (where status = 'in_stock') as cost_min,
+                  sum(cost)  filter (where status = 'in_stock') as stock_cost,
+                  count(*) filter (where
+                    ($2::date is null or created_at >= $2::date) and
+                    ($3::date is null or created_at < ($3::date + interval '1 day'))
+                  ) as added_in_range
+             from product_serials group by product_id
+         ) s on s.product_id = p.id
+        where ($1::bool is false or coalesce(s.draft_count, 0) > 0)
+          and (($2::date is null and $3::date is null) or coalesce(s.added_in_range, 0) > 0)
+        order by p.name`,
+      [onlyDrafts, from, to],
     );
     return { products: rows };
   });
