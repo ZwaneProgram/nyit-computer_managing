@@ -18,37 +18,37 @@ create table if not exists categories (
   sort int  not null default 0
 );
 
--- A product is a *model* (e.g. "RTX 5070"). Physical units live in
+-- A product is a *catalog model* (e.g. "RTX 5070"). Physical units live in
 -- product_serials, so stock = count of in_stock serials (derived, not stored).
--- sku is nullable because drafts can be saved incomplete.
+-- Per-item attributes (sku/cost/price/warranty/note/image) live on the unit.
 create table if not exists products (
   id              bigint generated always as identity primary key,
   category_id     bigint references categories(id) on delete set null,
   name            text not null,
-  sku             text,
   brand           text,
   model           text,
-  cost            numeric(12,2) not null default 0,
-  price           numeric(12,2) not null default 0,
   low             int not null default 0,
-  warranty_months int not null default 0,
-  image_url       text,
   notes           text,
   status          text not null default 'active' check (status in ('active', 'draft')),
   created_by      bigint references users(id) on delete set null,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
--- SKU unique only when present (drafts may have none).
-create unique index if not exists uniq_products_sku on products(sku) where sku is not null;
 
+-- Each row is one physical unit, carrying its own sku/cost/price/warranty/note/image.
 create table if not exists product_serials (
-  id         bigint generated always as identity primary key,
-  product_id bigint not null references products(id) on delete cascade,
-  serial     text not null unique,
-  status     text not null default 'in_stock' check (status in ('in_stock', 'sold', 'returned')),
-  sale_id    bigint, -- FK added after sales table exists (see bottom)
-  created_at timestamptz not null default now()
+  id              bigint generated always as identity primary key,
+  product_id      bigint not null references products(id) on delete cascade,
+  serial          text not null unique,
+  sku             text,
+  cost            numeric(12,2) not null default 0,
+  price           numeric(12,2) not null default 0,
+  warranty_months int not null default 0,
+  note            text,
+  image_url       text,
+  status          text not null default 'in_stock' check (status in ('in_stock', 'sold', 'returned')),
+  sale_id         bigint, -- FK added after sales table exists (see bottom)
+  created_at      timestamptz not null default now()
 );
 
 create table if not exists bundles (
@@ -143,6 +143,41 @@ begin
   end if;
 end $$;
 alter table product_serials add column if not exists created_at timestamptz not null default now();
+
+-- Per-item inventory (2026-06-09): move sku/cost/price/warranty/image from the
+-- catalog (products) down to each unit (product_serials). Idempotent.
+alter table product_serials add column if not exists sku             text;
+alter table product_serials add column if not exists cost            numeric(12,2) not null default 0;
+alter table product_serials add column if not exists price           numeric(12,2) not null default 0;
+alter table product_serials add column if not exists warranty_months int not null default 0;
+alter table product_serials add column if not exists note            text;
+alter table product_serials add column if not exists image_url       text;
+create unique index if not exists uniq_serials_sku on product_serials(sku) where sku is not null;
+
+-- One-time copy of catalog values onto units, BEFORE dropping the columns.
+-- Only fills zero/null so re-runs never clobber per-unit edits. Guarded so it
+-- no-ops once products no longer has the columns. SKU is intentionally NOT
+-- copied (would collide with the per-unit unique index).
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_name = 'products' and column_name = 'price') then
+    update product_serials ps set
+      cost            = case when ps.cost = 0 then p.cost else ps.cost end,
+      price           = case when ps.price = 0 then p.price else ps.price end,
+      warranty_months = case when ps.warranty_months = 0 then p.warranty_months else ps.warranty_months end,
+      image_url       = coalesce(ps.image_url, p.image_url)
+    from products p where p.id = ps.product_id;
+  end if;
+end $$;
+
+-- Drop the moved columns from the catalog.
+drop index if exists uniq_products_sku;
+alter table products drop column if exists sku;
+alter table products drop column if exists cost;
+alter table products drop column if exists price;
+alter table products drop column if exists warranty_months;
+alter table products drop column if exists image_url;
 
 -- Account roles (added 2026-06-03): owner manages accounts + settings, staff
 -- just uses the shop. Converge older DBs: add the column, then make sure there
