@@ -132,9 +132,13 @@ end $$;
 -- Converge databases migrated before the serials/drafts changes (no-ops on fresh).
 alter table products drop column if exists stock;
 alter table products add column if not exists status text not null default 'active';
-alter table products alter column sku drop not null;
 do $$
 begin
+  -- sku may already be dropped by the per-item migration below — guard it.
+  if exists (select 1 from information_schema.columns
+             where table_name = 'products' and column_name = 'sku') then
+    alter table products alter column sku drop not null;
+  end if;
   if exists (select 1 from pg_constraint where conname = 'products_sku_key') then
     alter table products drop constraint products_sku_key;
   end if;

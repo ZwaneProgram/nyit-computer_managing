@@ -56,7 +56,7 @@ export async function statsRoutes(app: FastifyInstance) {
                from sale_items si join sales s on s.id=si.sale_id
                where si.bundle_id is not null and ($1::timestamptz is null or s.created_at >= $1)`, [since]),
       // --- top products (range) ---
-      query(`select p.id, p.name, p.image_url,
+      query(`select p.id, p.name,
                      sum(si.qty) qty, sum(si.unit_price*si.qty) revenue,
                      sum((si.unit_price-si.unit_cost)*si.qty) profit
                from sale_items si
@@ -192,7 +192,7 @@ export async function statsRoutes(app: FastifyInstance) {
       categoryShare,
       categoryUnits: (catUnits.rows as Record<string, unknown>[]).map((r) => ({ label: r.label as string, units: n(r.units) })),
       topProducts: (topProd.rows as Record<string, unknown>[]).map((r) => ({
-        id: Number(r.id), name: r.name as string, sku: null as string | null, image_url: (r.image_url as string) ?? null,
+        id: Number(r.id), name: r.name as string, sku: null as string | null, image_url: null as string | null,
         qty: n(r.qty), revenue: n(r.revenue), profit: n(r.profit),
       })),
       lowStock: (low.rows as Record<string, unknown>[]).map((r) => ({
