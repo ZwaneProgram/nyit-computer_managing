@@ -1,12 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import type { PoolClient } from 'pg';
 import { pool, query } from '../db';
 import { requireAuth } from '../auth';
 
-interface ItemLine { product_id: number; qty: number }
 interface SaleBody {
   kind?: 'item' | 'bundle';
-  items?: ItemLine[];
+  items?: { serial_id: number }[];
   bundle_id?: number;
   bundle_qty?: number;
   customer_name?: string | null;
@@ -18,32 +16,6 @@ interface SaleBody {
 }
 
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
-
-/** Thrown when a product doesn't have enough in-stock units. */
-class StockError extends Error {}
-
-/**
- * Reserve `need` in-stock serials for a product (FIFO), flip them to sold,
- * and record a stock movement. Throws StockError if not enough stock.
- */
-async function sellUnits(client: PoolClient, productId: number, need: number, saleId: number, userId: number) {
-  const { rows } = await client.query(
-    `select id from product_serials
-       where product_id = $1 and status = 'in_stock'
-       order by created_at, id limit $2 for update`,
-    [productId, need],
-  );
-  if (rows.length < need) {
-    const { rows: p } = await client.query('select name from products where id = $1', [productId]);
-    throw new StockError(`สต๊อกไม่พอสำหรับ "${p[0]?.name ?? `#${productId}`}" (ต้องการ ${need}, มี ${rows.length})`);
-  }
-  const ids = rows.map((r) => r.id);
-  await client.query("update product_serials set status = 'sold', sale_id = $2 where id = any($1)", [ids, saleId]);
-  await client.query(
-    "insert into stock_movements (product_id, delta, reason, ref_sale_id, created_by) values ($1, $2, 'sale', $3, $4)",
-    [productId, -need, saleId, userId],
-  );
-}
 
 export async function saleRoutes(app: FastifyInstance) {
   const guard = { preHandler: requireAuth() };
@@ -128,20 +100,28 @@ export async function saleRoutes(app: FastifyInstance) {
     try {
       await client.query('begin');
 
-      // Build line items + the per-product quantity to deduct.
+      // Each line = one specific unit (item) or one bundle set.
       const lines: { product_id: number | null; bundle_id: number | null; qty: number; unit_price: number; unit_cost: number }[] = [];
-      const need = new Map<number, number>();
-      const addNeed = (pid: number, q: number) => need.set(pid, (need.get(pid) ?? 0) + q);
+      const soldSerialIds: number[] = [];           // serials to flip -> sold
+      const movements: { product_id: number; delta: number }[] = [];
 
       if (kind === 'item') {
-        const items = (b.items ?? []).filter((i) => Number(i.product_id) && Number(i.qty) > 0);
-        if (!items.length) { await client.query('rollback'); return reply.code(400).send({ error: 'ยังไม่มีรายการสินค้า' }); }
-        for (const it of items) {
-          const { rows } = await client.query('select id, price, cost from products where id = $1', [it.product_id]);
-          if (!rows[0]) { await client.query('rollback'); return reply.code(400).send({ error: 'มีสินค้าที่ไม่อยู่ในระบบ' }); }
-          const qty = Number(it.qty);
-          lines.push({ product_id: Number(it.product_id), bundle_id: null, qty, unit_price: num(rows[0].price), unit_cost: num(rows[0].cost) });
-          addNeed(Number(it.product_id), qty);
+        const ids = (b.items ?? []).map((i) => Number(i.serial_id)).filter((n) => Number.isFinite(n));
+        if (!ids.length) { await client.query('rollback'); return reply.code(400).send({ error: 'ยังไม่มีรายการสินค้า' }); }
+        for (const sid of ids) {
+          const { rows } = await client.query(
+            'select id, product_id, price, cost, status from product_serials where id = $1 for update',
+            [sid],
+          );
+          const u = rows[0];
+          if (!u) { await client.query('rollback'); return reply.code(400).send({ error: 'มีหน่วยสินค้าที่ไม่อยู่ในระบบ' }); }
+          if (u.status !== 'in_stock') {
+            await client.query('rollback');
+            return reply.code(409).send({ error: 'มีหน่วยสินค้าที่ถูกขายไปแล้ว — รีเฟรชแล้วลองใหม่' });
+          }
+          lines.push({ product_id: Number(u.product_id), bundle_id: null, qty: 1, unit_price: num(u.price), unit_cost: num(u.cost) });
+          soldSerialIds.push(Number(u.id));
+          movements.push({ product_id: Number(u.product_id), delta: -1 });
         }
       } else {
         const bundleId = Number(b.bundle_id);
@@ -149,16 +129,31 @@ export async function saleRoutes(app: FastifyInstance) {
         if (!bundleId) { await client.query('rollback'); return reply.code(400).send({ error: 'ยังไม่ได้เลือกชุดสินค้า' }); }
         const { rows: brow } = await client.query('select id, discount_pct from bundles where id = $1', [bundleId]);
         if (!brow[0]) { await client.query('rollback'); return reply.code(400).send({ error: 'ไม่พบชุดสินค้า' }); }
-        const { rows: comps } = await client.query(
-          'select p.id, p.price, p.cost from bundle_items bi join products p on p.id = bi.product_id where bi.bundle_id = $1',
-          [bundleId],
-        );
+        const { rows: comps } = await client.query('select product_id from bundle_items where bundle_id = $1', [bundleId]);
         if (!comps.length) { await client.query('rollback'); return reply.code(400).send({ error: 'ชุดสินค้านี้ไม่มีสินค้า' }); }
-        const listPrice = comps.reduce((s, c) => s + num(c.price), 0);
-        const bundleCost = comps.reduce((s, c) => s + num(c.cost), 0);
-        const bundlePrice = Math.round(listPrice * (1 - num(brow[0].discount_pct) / 100));
-        lines.push({ product_id: null, bundle_id: bundleId, qty: setQty, unit_price: bundlePrice, unit_cost: bundleCost });
-        for (const c of comps) addNeed(Number(c.id), setQty);
+
+        // Bundle UI overhaul deferred: FIFO-pick setQty in-stock units per component.
+        let listTotal = 0, costTotal = 0;
+        for (const c of comps) {
+          const pid = Number(c.product_id);
+          const { rows: picks } = await client.query(
+            `select id, price, cost from product_serials
+               where product_id = $1 and status = 'in_stock' order by created_at, id limit $2 for update`,
+            [pid, setQty],
+          );
+          if (picks.length < setQty) {
+            const { rows: p } = await client.query('select name from products where id = $1', [pid]);
+            await client.query('rollback');
+            return reply.code(409).send({ error: `สต๊อกไม่พอสำหรับ "${p[0]?.name ?? `#${pid}`}" ในชุดสินค้า` });
+          }
+          for (const pk of picks) { listTotal += num(pk.price); costTotal += num(pk.cost); soldSerialIds.push(Number(pk.id)); }
+          movements.push({ product_id: pid, delta: -setQty });
+        }
+        const discounted = Math.round(listTotal * (1 - num(brow[0].discount_pct) / 100));
+        lines.push({
+          product_id: null, bundle_id: bundleId, qty: setQty,
+          unit_price: Math.round(discounted / setQty), unit_cost: Math.round(costTotal / setQty),
+        });
       }
 
       const subtotal = lines.reduce((s, l) => s + l.unit_price * l.qty, 0);
@@ -183,15 +178,20 @@ export async function saleRoutes(app: FastifyInstance) {
           [sale.id, l.product_id, l.bundle_id, l.qty, l.unit_price, l.unit_cost],
         );
       }
-      for (const [pid, q] of need) {
-        await sellUnits(client, pid, q, Number(sale.id), userId);
+      if (soldSerialIds.length) {
+        await client.query("update product_serials set status = 'sold', sale_id = $2 where id = any($1)", [soldSerialIds, Number(sale.id)]);
+      }
+      for (const m of movements) {
+        await client.query(
+          "insert into stock_movements (product_id, delta, reason, ref_sale_id, created_by) values ($1, $2, 'sale', $3, $4)",
+          [m.product_id, m.delta, Number(sale.id), userId],
+        );
       }
 
       await client.query('commit');
       return reply.code(201).send({ sale });
     } catch (err) {
       await client.query('rollback');
-      if (err instanceof StockError) return reply.code(409).send({ error: err.message });
       throw err;
     } finally {
       client.release();

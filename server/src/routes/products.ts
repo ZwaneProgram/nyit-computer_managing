@@ -2,35 +2,61 @@ import type { FastifyInstance } from 'fastify';
 import { pool, query } from '../db';
 import { requireAuth } from '../auth';
 
+/** One physical unit (product_serials row). */
+interface UnitInput {
+  serial?: string;
+  sku?: string | null;
+  cost?: number;
+  price?: number;
+  warranty_months?: number;
+  note?: string | null;
+  image_url?: string | null;
+}
+
 interface ProductBody {
   category_id?: number | null;
   name?: string;
-  sku?: string | null;
   brand?: string | null;
   model?: string | null;
-  cost?: number;
-  price?: number;
   low?: number;
-  warranty_months?: number;
-  image_url?: string | null;
   notes?: string | null;
   status?: 'active' | 'draft';
-  /** Serial numbers for the physical units (only used on create). */
-  serials?: string[];
+  /** Physical units to create alongside the catalog (create only). */
+  units?: UnitInput[];
 }
 
-/** Clean a serial list: trim, drop blanks, de-dupe (case-insensitive). */
-function cleanSerials(input: unknown): string[] {
+/** A normalised unit ready to insert. */
+interface CleanUnit {
+  serial: string;
+  sku: string | null;
+  cost: number;
+  price: number;
+  warranty_months: number;
+  note: string | null;
+  image_url: string | null;
+}
+
+/** Clean a unit list: trim serials, drop blank-serial rows, de-dupe by serial. */
+function cleanUnits(input: unknown): CleanUnit[] {
   if (!Array.isArray(input)) return [];
   const seen = new Set<string>();
-  const out: string[] = [];
+  const out: CleanUnit[] = [];
   for (const raw of input) {
-    const s = String(raw ?? '').trim();
-    if (!s) continue;
-    const key = s.toLowerCase();
+    const u = (raw ?? {}) as UnitInput;
+    const serial = String(u.serial ?? '').trim();
+    if (!serial) continue;
+    const key = serial.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(s);
+    out.push({
+      serial,
+      sku: u.sku?.toString().trim() || null,
+      cost: Number(u.cost) || 0,
+      price: Number(u.price) || 0,
+      warranty_months: Number(u.warranty_months) || 0,
+      note: u.note?.toString().trim() || null,
+      image_url: u.image_url ?? null,
+    });
   }
   return out;
 }
@@ -40,20 +66,27 @@ function conflictMessage(err: unknown): string | null {
   const e = err as { code?: string; constraint?: string };
   if (e.code !== '23505') return null;
   if (e.constraint === 'product_serials_serial_key') return 'มี Serial Number นี้อยู่แล้ว';
-  if (e.constraint === 'uniq_products_sku') return 'SKU นี้มีอยู่แล้ว';
+  if (e.constraint === 'uniq_serials_sku') return 'SKU นี้มีอยู่แล้ว';
   return 'ข้อมูลซ้ำกับที่มีอยู่แล้ว';
 }
 
-// Shared select: product + category + derived in-stock count.
+// Catalog + category + derived stock + price range + in-stock cost total.
 const PRODUCT_SELECT = `
   select p.*, c.name as category_name, c.slug as category_slug,
-         coalesce(s.in_stock, 0)::int as stock
+         coalesce(s.in_stock, 0)::int as stock,
+         s.price_min, s.price_max, coalesce(s.stock_cost, 0) as stock_cost
     from products p
     left join categories c on c.id = p.category_id
     left join (
-      select product_id, count(*) filter (where status = 'in_stock') as in_stock
+      select product_id,
+             count(*) filter (where status = 'in_stock') as in_stock,
+             min(price) filter (where status = 'in_stock') as price_min,
+             max(price) filter (where status = 'in_stock') as price_max,
+             sum(cost)  filter (where status = 'in_stock') as stock_cost
         from product_serials group by product_id
     ) s on s.product_id = p.id`;
+
+const UNIT_RETURN = 'id, serial, sku, status, cost, price, warranty_months, note, image_url, created_at';
 
 export async function productRoutes(app: FastifyInstance) {
   const guard = { preHandler: requireAuth() };
@@ -69,13 +102,13 @@ export async function productRoutes(app: FastifyInstance) {
     return { products: rows };
   });
 
-  // One product, with all its serial units.
+  // One product, with all its units.
   app.get('/api/products/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const { rows } = await query(`${PRODUCT_SELECT} where p.id = $1`, [id]);
     if (!rows[0]) return reply.code(404).send({ error: 'ไม่พบสินค้า' });
     const { rows: serials } = await query(
-      'select id, serial, status, sale_id, created_at from product_serials where product_id = $1 order by created_at, id',
+      `select ${UNIT_RETURN}, sale_id from product_serials where product_id = $1 order by created_at, id`,
       [id],
     );
     return { product: rows[0], serials };
@@ -85,31 +118,30 @@ export async function productRoutes(app: FastifyInstance) {
     const b = (req.body ?? {}) as ProductBody;
     const status = b.status === 'draft' ? 'draft' : 'active';
     if (!b.name?.trim()) return reply.code(400).send({ error: 'ต้องระบุชื่อสินค้า' });
-    if (status === 'active' && !b.sku?.trim()) {
-      return reply.code(400).send({ error: 'สินค้าที่เผยแพร่ต้องมี SKU (หรือบันทึกเป็นแบบร่างก่อน)' });
-    }
-    const serials = cleanSerials(b.serials);
+    const units = cleanUnits(b.units);
 
     const client = await pool.connect();
     try {
       await client.query('begin');
       const { rows } = await client.query(
-        `insert into products
-           (category_id, name, sku, brand, model, cost, price, low, warranty_months, image_url, notes, status, created_by)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        `insert into products (category_id, name, brand, model, low, notes, status, created_by)
+         values ($1,$2,$3,$4,$5,$6,$7,$8)
          returning *`,
         [
-          b.category_id ?? null, b.name.trim(), b.sku?.trim() || null, b.brand ?? null, b.model ?? null,
-          b.cost ?? 0, b.price ?? 0, b.low ?? 0, b.warranty_months ?? 0,
-          b.image_url ?? null, b.notes ?? null, status, req.user!.id,
+          b.category_id ?? null, b.name.trim(), b.brand ?? null, b.model ?? null,
+          b.low ?? 0, b.notes ?? null, status, req.user!.id,
         ],
       );
       const product = rows[0];
-      for (const s of serials) {
-        await client.query('insert into product_serials (product_id, serial) values ($1, $2)', [product.id, s]);
+      for (const u of units) {
+        await client.query(
+          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, note, image_url)
+           values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [product.id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url],
+        );
       }
       await client.query('commit');
-      return reply.code(201).send({ product: { ...product, stock: serials.length } });
+      return reply.code(201).send({ product: { ...product, stock: units.length } });
     } catch (err) {
       await client.query('rollback');
       const msg = conflictMessage(err);
@@ -125,30 +157,19 @@ export async function productRoutes(app: FastifyInstance) {
     const b = (req.body ?? {}) as ProductBody;
     if (!b.name?.trim()) return reply.code(400).send({ error: 'ต้องระบุชื่อสินค้า' });
     const status = b.status === 'draft' ? 'draft' : 'active';
-    if (status === 'active' && !b.sku?.trim()) {
-      return reply.code(400).send({ error: 'สินค้าที่เผยแพร่ต้องมี SKU' });
-    }
-    try {
-      const { rows } = await query(
-        `update products set
-           category_id = $1, name = $2, sku = $3, brand = $4, model = $5,
-           cost = $6, price = $7, low = $8, warranty_months = $9,
-           image_url = $10, notes = $11, status = $12, updated_at = now()
-         where id = $13
-         returning *`,
-        [
-          b.category_id ?? null, b.name.trim(), b.sku?.trim() || null, b.brand ?? null, b.model ?? null,
-          b.cost ?? 0, b.price ?? 0, b.low ?? 0, b.warranty_months ?? 0,
-          b.image_url ?? null, b.notes ?? null, status, id,
-        ],
-      );
-      if (!rows[0]) return reply.code(404).send({ error: 'ไม่พบสินค้า' });
-      return { product: rows[0] };
-    } catch (err) {
-      const msg = conflictMessage(err);
-      if (msg) return reply.code(409).send({ error: msg });
-      throw err;
-    }
+    const { rows } = await query(
+      `update products set
+         category_id = $1, name = $2, brand = $3, model = $4,
+         low = $5, notes = $6, status = $7, updated_at = now()
+       where id = $8
+       returning *`,
+      [
+        b.category_id ?? null, b.name.trim(), b.brand ?? null, b.model ?? null,
+        b.low ?? 0, b.notes ?? null, status, id,
+      ],
+    );
+    if (!rows[0]) return reply.code(404).send({ error: 'ไม่พบสินค้า' });
+    return { product: rows[0] };
   });
 
   app.delete('/api/products/:id', guard, async (req, reply) => {
@@ -157,13 +178,13 @@ export async function productRoutes(app: FastifyInstance) {
     return reply.code(204).send();
   });
 
-  // ----- Serial units -----
+  // ----- Units (product_serials) -----
 
-  // Add one or more serial units to a product (stock goes up).
+  // Add one or more units to a product (stock goes up).
   app.post('/api/products/:id/serials', guard, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const serials = cleanSerials((req.body as { serials?: string[] })?.serials);
-    if (!serials.length) return reply.code(400).send({ error: 'ต้องระบุ Serial Number อย่างน้อยหนึ่งรายการ' });
+    const units = cleanUnits((req.body as { units?: UnitInput[] })?.units);
+    if (!units.length) return reply.code(400).send({ error: 'ต้องระบุ Serial Number อย่างน้อยหนึ่งรายการ' });
 
     const { rows: exists } = await query('select 1 from products where id = $1', [id]);
     if (!exists[0]) return reply.code(404).send({ error: 'ไม่พบสินค้า' });
@@ -172,10 +193,12 @@ export async function productRoutes(app: FastifyInstance) {
     try {
       await client.query('begin');
       const added = [];
-      for (const s of serials) {
+      for (const u of units) {
         const { rows } = await client.query(
-          'insert into product_serials (product_id, serial) values ($1, $2) returning id, serial, status, created_at',
-          [id, s],
+          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, note, image_url)
+           values ($1,$2,$3,$4,$5,$6,$7,$8)
+           returning ${UNIT_RETURN}`,
+          [id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url],
         );
         added.push(rows[0]);
       }
@@ -191,7 +214,30 @@ export async function productRoutes(app: FastifyInstance) {
     }
   });
 
-  // Remove a serial unit (only if not already sold).
+  // Edit one unit (only if not already sold).
+  app.put('/api/serials/:serialId', guard, async (req, reply) => {
+    const { serialId } = req.params as { serialId: string };
+    const u = cleanUnits([req.body])[0];
+    if (!u) return reply.code(400).send({ error: 'ต้องระบุ Serial Number' });
+    const { rows: cur } = await query('select status from product_serials where id = $1', [serialId]);
+    if (!cur[0]) return reply.code(404).send({ error: 'ไม่พบรายการ' });
+    if (cur[0].status === 'sold') return reply.code(409).send({ error: 'แก้ไขไม่ได้: หน่วยนี้ถูกขายไปแล้ว' });
+    try {
+      const { rows } = await query(
+        `update product_serials set serial = $1, sku = $2, cost = $3, price = $4,
+           warranty_months = $5, note = $6, image_url = $7 where id = $8
+         returning ${UNIT_RETURN}`,
+        [u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url, serialId],
+      );
+      return { serial: rows[0] };
+    } catch (err) {
+      const msg = conflictMessage(err);
+      if (msg) return reply.code(409).send({ error: msg });
+      throw err;
+    }
+  });
+
+  // Remove a unit (only if not already sold).
   app.delete('/api/serials/:serialId', guard, async (req, reply) => {
     const { serialId } = req.params as { serialId: string };
     const { rows } = await query('select status from product_serials where id = $1', [serialId]);
