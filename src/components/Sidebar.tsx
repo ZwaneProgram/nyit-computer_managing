@@ -23,6 +23,7 @@ export const NAV: {
   { id: 'categories', label: 'หมวดหมู่', icon: 'tag', group: 'main', titleTH: 'จัดการหมวดหมู่', crumb: 'สินค้า / หมวดหมู่' },
   { id: 'bundles', label: 'ชุดสินค้า', icon: 'layers', group: 'main', titleTH: 'ชุดสินค้า (Bundles)', crumb: 'สินค้า / ชุดสินค้า' },
   { id: 'sales', label: 'ขายสินค้า', icon: 'cart', group: 'sell', titleTH: 'ระบบขาย', crumb: 'การขาย / ขายสินค้า' },
+  { id: 'generate-post', label: 'สร้างโพสต์ AI', icon: 'receipt', group: 'sell', titleTH: 'สร้างโพสต์ขาย AI', crumb: 'การขาย / สร้างโพสต์ AI' },
   { id: 'analytics', label: 'วิเคราะห์', icon: 'chart', group: 'sell', titleTH: 'วิเคราะห์และรายงาน', crumb: 'รายงาน / วิเคราะห์' },
 ];
 

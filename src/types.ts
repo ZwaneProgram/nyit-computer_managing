@@ -10,4 +10,5 @@ export type ViewId =
   | 'bundles'
   | 'sales'
   | 'analytics'
+  | 'generate-post'
   | 'settings';

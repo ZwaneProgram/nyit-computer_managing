@@ -10,6 +10,7 @@ import {
   type Category,
   type ProductInput,
 } from '../data/inventory';
+import { generateProductDescription, generateProductSpecs } from '../data/aiPost';
 import { fetchSettings } from '../data/settings';
 import { WARRANTY_PRESETS, isPresetWarranty } from '../data/warranty';
 import { ApiError } from '../lib/api';
@@ -51,10 +52,12 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
   const [cats, setCats] = useState<Category[]>([]);
   const [form, setForm] = useState({
     category_id: '' as number | '',
-    name: '', model: '', low: '5', notes: '',
+    name: '', model: '', low: '5', notes: '', description: '', specsText: '',
   });
   const [units, setUnits] = useState<UnitDraft[]>([]);
   const [busy, setBusy] = useState(false);
+  const [generatingDesc, setGeneratingDesc] = useState(false);
+  const [generatingSpecs, setGeneratingSpecs] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -85,10 +88,40 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
           model: product.model ?? '',
           low: String(product.low),
           notes: product.notes ?? '',
+          description: product.description ?? '',
+          specsText: product.specs ? product.specs.map(([k, v]) => `${k}: ${v}`).join('\n') : '',
         });
       })
       .catch(() => setError('โหลดข้อมูลสินค้าไม่สำเร็จ'));
   }, [editId]);
+
+  const genDescription = async () => {
+    setGeneratingDesc(true);
+    setError(null);
+    try {
+      const catName = cats.find((c) => c.id === form.category_id)?.name;
+      const desc = await generateProductDescription(form.name, form.model, catName);
+      setForm((f) => ({ ...f, description: desc }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'สร้างรายละเอียดไม่สำเร็จ');
+    } finally {
+      setGeneratingDesc(false);
+    }
+  };
+
+  const genSpecs = async () => {
+    setGeneratingSpecs(true);
+    setError(null);
+    try {
+      const catName = cats.find((c) => c.id === form.category_id)?.name;
+      const specs = await generateProductSpecs(form.name, form.model, catName);
+      setForm((f) => ({ ...f, specsText: specs.map(([k, v]) => `${k}: ${v}`).join('\n') }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'สร้างสเปกไม่สำเร็จ');
+    } finally {
+      setGeneratingSpecs(false);
+    }
+  };
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -112,6 +145,17 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
     setError(null);
     if (!form.name.trim()) return setError('กรุณากรอกชื่อสินค้า');
 
+    const parsedSpecs: [string, string][] = form.specsText
+      .split('\n')
+      .map((line) => {
+        const sep = line.indexOf(':');
+        if (sep < 1) return null;
+        const k = line.slice(0, sep).trim();
+        const v = line.slice(sep + 1).trim();
+        return k && v ? [k, v] as [string, string] : null;
+      })
+      .filter((x): x is [string, string] => x !== null);
+
     const input: ProductInput = {
       category_id: form.category_id === '' ? null : Number(form.category_id),
       name: form.name.trim(),
@@ -119,6 +163,8 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
       model: form.model.trim() || null,
       low: Number(form.low) || 0,
       notes: form.notes.trim() || null,
+      description: form.description.trim() || null,
+      specs: parsedSpecs.length ? parsedSpecs : null,
       status: 'active',
       // Units only on create; edit mode manages them on the detail page.
       ...(isEdit ? {} : {
@@ -196,6 +242,29 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
             <div className="field">
               <label className="field-label">รุ่น / โมเดล</label>
               <input className="input" placeholder="เช่น RTX5090-O24G-GAMING" value={form.model} onChange={(e) => set('model', e.target.value)} />
+            </div>
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                <label className="field-label" style={{ margin: 0 }}>สเปกสินค้า (แสดงเป็นตารางบนหน้าร้าน)</label>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={genSpecs}
+                  disabled={generatingSpecs || (!form.name.trim() && !form.model.trim())}
+                  title="ให้ AI สร้างสเปกจากชื่อและรุ่น"
+                >
+                  {generatingSpecs ? 'กำลังสร้าง...' : '✨ สร้างสเปก AI'}
+                </button>
+              </div>
+              <textarea
+                className="textarea mono"
+                rows={8}
+                placeholder={"Brand: GIGABYTE\nGPU Series: NVIDIA GeForce RTX™ 50 Series\nMemory Size: 32GB GDDR7\n..."}
+                value={form.specsText}
+                onChange={(e) => set('specsText', e.target.value)}
+                style={{ fontSize: 12 }}
+              />
+              <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>แต่ละบรรทัด: ชื่อสเปก: ค่า — เช่น <code>CUDA® Cores: 21760</code></div>
             </div>
           </div>
         </div>

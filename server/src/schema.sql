@@ -117,6 +117,33 @@ create table if not exists shop_settings (
 );
 insert into shop_settings (id) values (1) on conflict (id) do nothing;
 
+-- AI sales-post footer (2026-06-17): fixed shop info appended verbatim to every
+-- generated Facebook/Marketplace post, so the AI never invents phone/links. All
+-- owner-editable in Settings. Idempotent — safe on existing databases.
+alter table shop_settings add column if not exists post_warranty text;
+alter table shop_settings add column if not exists post_shipping text;
+alter table shop_settings add column if not exists post_payment  text;
+alter table shop_settings add column if not exists post_phone    text;
+alter table shop_settings add column if not exists post_website  text;
+alter table shop_settings add column if not exists post_page_url text;
+alter table shop_settings add column if not exists post_shopee_url text;
+alter table shop_settings add column if not exists post_hashtags text;
+alter table shop_settings add column if not exists post_extra    text;
+
+-- Facebook page posting (2026-06-17): owner stores Page ID + long-lived Page
+-- Access Token in Settings; backend posts on their behalf via Graph API.
+alter table shop_settings add column if not exists fb_page_id           text;
+alter table shop_settings add column if not exists fb_page_access_token text;
+
+-- AI product description (2026-06-17): owner can generate or type a Thai product
+-- description shown on the public storefront below the model name.
+alter table products add column if not exists description text;
+
+-- AI product specs (2026-06-17): structured key-value spec sheet stored as a
+-- JSON array of [key, value] pairs, e.g. [["Brand","GIGABYTE"],["CUDA Cores","21760"]].
+-- Displayed as a table on the public storefront.
+alter table products add column if not exists specs jsonb;
+
 -- product_serials.sale_id -> sales(id) (added here because sales is defined later).
 do $$
 begin

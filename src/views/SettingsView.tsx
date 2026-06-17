@@ -35,6 +35,8 @@ export function SettingsView({ showToast }: ViewProps) {
       </div>
 
       {isOwner && <DefaultsCard showToast={showToast} fail={fail} />}
+      {isOwner && <PostFooterCard showToast={showToast} fail={fail} />}
+      {isOwner && <FacebookCard showToast={showToast} fail={fail} />}
       <MyPasswordCard showToast={showToast} fail={fail} />
       {isOwner && <AccountsCard showToast={showToast} fail={fail} />}
     </div>
@@ -88,6 +90,153 @@ function DefaultsCard({ showToast, fail }: { showToast: (m: string) => void; fai
               value={form.default_low}
               onChange={(e) => setForm((f) => (f ? { ...f, default_low: Math.max(0, Number(e.target.value) || 0) } : f))}
             />
+          </Field>
+          <div>
+            <button className="btn btn-primary" onClick={save} disabled={saving}>
+              <Icons.check /> บันทึก
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- AI sales-post footer (owner only) ----------
+// The fixed shop info appended to every AI-generated post. Loads the whole
+// settings row and saves it back so default_low etc. are preserved.
+function PostFooterCard({ showToast, fail }: { showToast: (m: string) => void; fail: FailFn }) {
+  const [form, setForm] = useState<ShopSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchSettings()
+      .then(setForm)
+      .catch((err) => fail(err, 'โหลดค่าตั้งค่าไม่สำเร็จ'))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const set = (k: keyof ShopSettings) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => (f ? { ...f, [k]: e.target.value || null } : f));
+
+  const save = async () => {
+    if (!form) return;
+    setSaving(true);
+    try {
+      setForm(await updateSettings(form));
+      showToast('บันทึกแล้ว');
+    } catch (err) {
+      fail(err, 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card card-pad" style={{ maxWidth: 760 }}>
+      <div className="section-h">
+        <div>
+          <h3>โพสต์ขาย AI — ข้อมูลท้ายโพสต์</h3>
+          <div className="muted section-sub">ข้อมูลร้านที่ต่อท้ายทุกโพสต์ที่ AI สร้าง (AI จะไม่แต่งเบอร์/ลิงก์เอง) เว้นว่างได้ถ้าไม่ต้องการบรรทัดนั้น</div>
+        </div>
+      </div>
+      {loading || !form ? (
+        <div className="muted" style={{ padding: 12 }}>กำลังโหลด...</div>
+      ) : (
+        <div className="grid" style={{ gap: 12 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <Field label="การรับประกัน" hint="เช่น รับประกันร้าน 15 วัน" style={{ flex: 1, minWidth: 200 }}>
+              <input className="input" value={form.post_warranty ?? ''} onChange={set('post_warranty')} />
+            </Field>
+            <Field label="การจัดส่ง" hint="เช่น จัดส่งทั่วไทย แพ็คแน่นหนา" style={{ flex: 1, minWidth: 200 }}>
+              <input className="input" value={form.post_shipping ?? ''} onChange={set('post_shipping')} />
+            </Field>
+          </div>
+          <Field label="ช่องทางชำระเงิน" hint="เช่น รับบัตรเครดิต / เก็บเงินปลายทาง / ผ่อน Shopee SPayLater ได้">
+            <input className="input" value={form.post_payment ?? ''} onChange={set('post_payment')} />
+          </Field>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <Field label="เบอร์โทร" hint="เช่น 081-961-3869" style={{ flex: 1, minWidth: 160 }}>
+              <input className="input" value={form.post_phone ?? ''} onChange={set('post_phone')} />
+            </Field>
+            <Field label="เว็บไซต์" hint="เช่น ny-itshop.com" style={{ flex: 1, minWidth: 160 }}>
+              <input className="input" value={form.post_website ?? ''} onChange={set('post_website')} />
+            </Field>
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <Field label="ลิงก์เพจร้าน" style={{ flex: 1, minWidth: 160 }}>
+              <input className="input" value={form.post_page_url ?? ''} onChange={set('post_page_url')} />
+            </Field>
+            <Field label="ลิงก์ Shopee" style={{ flex: 1, minWidth: 160 }}>
+              <input className="input" value={form.post_shopee_url ?? ''} onChange={set('post_shopee_url')} />
+            </Field>
+          </div>
+          <Field label="แฮชแท็ก" hint="เช่น #คอมเกมมิ่ง #คอมประกอบ #NYITSHOP">
+            <textarea className="input" rows={2} value={form.post_hashtags ?? ''} onChange={set('post_hashtags')} style={{ resize: 'vertical' }} />
+          </Field>
+          <Field label="ข้อความเพิ่มเติม (ไม่บังคับ)" hint="บรรทัดพิเศษที่อยากให้ต่อท้ายก่อนแฮชแท็ก">
+            <textarea className="input" rows={2} value={form.post_extra ?? ''} onChange={set('post_extra')} style={{ resize: 'vertical' }} />
+          </Field>
+          <div>
+            <button className="btn btn-primary" onClick={save} disabled={saving}>
+              <Icons.check /> บันทึก
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Facebook page posting (owner only) ----------
+function FacebookCard({ showToast, fail }: { showToast: (m: string) => void; fail: FailFn }) {
+  const [form, setForm] = useState<ShopSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchSettings()
+      .then(setForm)
+      .catch((err) => fail(err, 'โหลดค่าตั้งค่าไม่สำเร็จ'))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const set = (k: keyof ShopSettings) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => (f ? { ...f, [k]: e.target.value || null } : f));
+
+  const save = async () => {
+    if (!form) return;
+    setSaving(true);
+    try {
+      setForm(await updateSettings(form));
+      showToast('บันทึกแล้ว');
+    } catch (err) {
+      fail(err, 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card card-pad" style={{ maxWidth: 760 }}>
+      <div className="section-h">
+        <div>
+          <h3>Facebook — โพสต์อัตโนมัติ</h3>
+          <div className="muted section-sub">Page ID และ Page Access Token จาก Graph API Explorer → /me/accounts ใช้สำหรับโพสต์ขายลงเพจโดยตรง</div>
+        </div>
+      </div>
+      {loading || !form ? (
+        <div className="muted" style={{ padding: 12 }}>กำลังโหลด...</div>
+      ) : (
+        <div className="grid" style={{ gap: 12 }}>
+          <Field label="Page ID" hint="ตัวเลข เช่น 123456789012345">
+            <input className="input" value={form.fb_page_id ?? ''} onChange={set('fb_page_id')} placeholder="123456789012345" />
+          </Field>
+          <Field label="Page Access Token" hint="ได้จาก /me/accounts → access_token ของเพจนั้น">
+            <input className="input" type="password" value={form.fb_page_access_token ?? ''} onChange={set('fb_page_access_token')} placeholder="EAAxxxxxxx..." />
           </Field>
           <div>
             <button className="btn btn-primary" onClick={save} disabled={saving}>

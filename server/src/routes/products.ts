@@ -21,6 +21,8 @@ interface ProductBody {
   model?: string | null;
   low?: number;
   notes?: string | null;
+  description?: string | null;
+  specs?: [string, string][] | null;
   status?: 'active' | 'draft';
   /** Physical units to create alongside the catalog (create only). */
   units?: UnitInput[];
@@ -159,12 +161,13 @@ export async function productRoutes(app: FastifyInstance) {
     try {
       await client.query('begin');
       const { rows } = await client.query(
-        `insert into products (category_id, name, brand, model, low, notes, status, created_by)
-         values ($1,$2,$3,$4,$5,$6,$7,$8)
+        `insert into products (category_id, name, brand, model, low, notes, description, specs, status, created_by)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          returning *`,
         [
           b.category_id ?? null, b.name.trim(), b.brand ?? null, b.model ?? null,
-          b.low ?? 0, b.notes ?? null, status, req.user!.id,
+          b.low ?? 0, b.notes ?? null, b.description ?? null,
+          b.specs ? JSON.stringify(b.specs) : null, status, req.user!.id,
         ],
       );
       const product = rows[0];
@@ -195,12 +198,13 @@ export async function productRoutes(app: FastifyInstance) {
     const { rows } = await query(
       `update products set
          category_id = $1, name = $2, brand = $3, model = $4,
-         low = $5, notes = $6, status = $7, updated_at = now()
-       where id = $8
+         low = $5, notes = $6, description = $7, specs = $8, status = $9, updated_at = now()
+       where id = $10
        returning *`,
       [
         b.category_id ?? null, b.name.trim(), b.brand ?? null, b.model ?? null,
-        b.low ?? 0, b.notes ?? null, status, id,
+        b.low ?? 0, b.notes ?? null, b.description ?? null,
+        b.specs ? JSON.stringify(b.specs) : null, status, id,
       ],
     );
     if (!rows[0]) return reply.code(404).send({ error: 'ไม่พบสินค้า' });

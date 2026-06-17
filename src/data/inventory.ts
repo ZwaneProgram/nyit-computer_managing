@@ -37,7 +37,9 @@ export interface Product {
   model: string | null;
   low: number;
   notes: string | null;
+  description: string | null;
   status: ProductStatus;
+  specs: [string, string][] | null;
   /** Derived: count of in_stock units. */
   stock: number;
   /** Derived: count of draft units. */
@@ -75,6 +77,8 @@ export interface ProductInput {
   model: string | null;
   low: number;
   notes: string | null;
+  description: string | null;
+  specs: [string, string][] | null;
   status: ProductStatus;
   units?: UnitInput[];
 }
@@ -92,6 +96,8 @@ function normProduct(r: Record<string, unknown>): Product {
     model: (r.model as string) ?? null,
     low: n(r.low),
     notes: (r.notes as string) ?? null,
+    description: (r.description as string) ?? null,
+    specs: (r.specs as [string, string][] | null) ?? null,
     status: (r.status as ProductStatus) ?? 'active',
     stock: n(r.stock),
     draft_count: n(r.draft_count),

@@ -15,6 +15,7 @@ import { statsRoutes } from './routes/stats';
 import { uploadRoutes, UPLOAD_DIR } from './routes/uploads';
 import { userRoutes } from './routes/users';
 import { settingsRoutes } from './routes/settings';
+import { aiRoutes } from './routes/ai';
 
 const app = Fastify({ logger: true });
 
@@ -47,6 +48,7 @@ await app.register(statsRoutes);
 await app.register(uploadRoutes);
 await app.register(userRoutes);
 await app.register(settingsRoutes);
+await app.register(aiRoutes);
 
 // In production, serve the built frontend (dist/) from this same server, so the
 // whole app runs on a single port (no separate web server needed). In dev there

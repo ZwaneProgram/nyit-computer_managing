@@ -10,6 +10,7 @@ import { CategoriesView } from './views/CategoriesView';
 import { BundlesView } from './views/BundlesView';
 import { SalesView } from './views/SalesView';
 import { AnalyticsView } from './views/AnalyticsView';
+import { GeneratePostView } from './views/GeneratePostView';
 import { SettingsView } from './views/SettingsView';
 import { LoginView } from './views/LoginView';
 import { useTheme } from './hooks/useTheme';
@@ -73,6 +74,7 @@ export default function App() {
       case 'bundles': return <BundlesView showToast={showToast} />;
       case 'sales': return <SalesView showToast={showToast} />;
       case 'analytics': return <AnalyticsView />;
+      case 'generate-post': return <GeneratePostView showToast={showToast} />;
       case 'settings': return <SettingsView showToast={showToast} />;
       default: return null;
     }
