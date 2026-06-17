@@ -10,7 +10,7 @@ import {
   type Category,
   type ProductInput,
 } from '../data/inventory';
-import { generateProductDescription, generateProductSpecs } from '../data/aiPost';
+import { generateProductSpecs } from '../data/aiPost';
 import { fetchSettings } from '../data/settings';
 import { WARRANTY_PRESETS, isPresetWarranty } from '../data/warranty';
 import { ApiError } from '../lib/api';
@@ -56,7 +56,6 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
   });
   const [units, setUnits] = useState<UnitDraft[]>([]);
   const [busy, setBusy] = useState(false);
-  const [generatingDesc, setGeneratingDesc] = useState(false);
   const [generatingSpecs, setGeneratingSpecs] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,20 +93,6 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
       })
       .catch(() => setError('โหลดข้อมูลสินค้าไม่สำเร็จ'));
   }, [editId]);
-
-  const genDescription = async () => {
-    setGeneratingDesc(true);
-    setError(null);
-    try {
-      const catName = cats.find((c) => c.id === form.category_id)?.name;
-      const desc = await generateProductDescription(form.name, form.model, catName);
-      setForm((f) => ({ ...f, description: desc }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'สร้างรายละเอียดไม่สำเร็จ');
-    } finally {
-      setGeneratingDesc(false);
-    }
-  };
 
   const genSpecs = async () => {
     setGeneratingSpecs(true);
