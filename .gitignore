@@ -11,3 +11,4 @@ npm-debug.log*
 
 # Uploaded product images (runtime data, not source)
 server/uploads/
+/docs

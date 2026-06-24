@@ -56,6 +56,7 @@ export const Icons = {
   cpu: (p: IconProps) => <Ic {...p} d={<><rect x="6" y="6" width="12" height="12" rx="1.5" /><rect x="9" y="9" width="6" height="6" /><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" /></>} />,
   menu: (p: IconProps) => <Ic {...p} d="M3 6h18M3 12h18M3 18h18" />,
   qr: (p: IconProps) => <Ic {...p} d={<><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><path d="M14 14h3v3h-3zM20 14v3M14 20h7" /></>} />,
+  barcode: (p: IconProps) => <Ic {...p} d={<><path d="M3 5v14M7 5v14M11 5v14M15 5v14M19 5v14" /></>} />,
   lock: (p: IconProps) => <Ic {...p} d={<><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /><path d="M12 15v2" /></>} />,
   logout: (p: IconProps) => <Ic {...p} d={<><path d="M14 8V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-2" /><path d="M18 15l3-3-3-3" /><path d="M21 12H9" /></>} />,
 } as const;

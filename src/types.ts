@@ -11,4 +11,5 @@ export type ViewId =
   | 'sales'
   | 'analytics'
   | 'generate-post'
+  | 'generate-barcode'
   | 'settings';

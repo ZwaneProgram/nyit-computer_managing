@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Icons } from '../components/Icons';
+import { BarcodeModal } from '../components/BarcodeModal';
 import { fmtTHB, fmtN } from '../data/format';
 import {
   addUnits,
@@ -292,6 +293,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
   const [addForm, setAddForm] = useState<UnitFormState>(blankUnit());
   const [editId, setEditId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<UnitFormState>(blankUnit());
+  const [barcodeUnit, setBarcodeUnit] = useState<Serial | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -470,12 +472,15 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                         <td data-label="เพิ่มเมื่อ"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(s.created_at).toLocaleDateString('en-GB')}</span></td>
                         <td data-label="สถานะ">{serialStatusChip(s.status)}</td>
                         <td className="cell-actions">
-                          {s.status !== 'sold' && (
-                            <div style={{ display: 'inline-flex', gap: 4 }}>
-                              <button className="btn btn-sm btn-icon btn-ghost" title="แก้ไขเครื่องนี้" onClick={() => startEdit(s)}><Icons.edit /></button>
-                              <button className="btn btn-sm btn-icon btn-ghost" title="ลบเครื่องนี้" onClick={() => removeSerial(s)}><Icons.trash /></button>
-                            </div>
-                          )}
+                          <div style={{ display: 'inline-flex', gap: 4 }}>
+                            <button className="btn btn-sm btn-icon btn-ghost" title="บาร์โค้ดเครื่องนี้" onClick={() => setBarcodeUnit(s)}><Icons.barcode /></button>
+                            {s.status !== 'sold' && (
+                              <>
+                                <button className="btn btn-sm btn-icon btn-ghost" title="แก้ไขเครื่องนี้" onClick={() => startEdit(s)}><Icons.edit /></button>
+                                <button className="btn btn-sm btn-icon btn-ghost" title="ลบเครื่องนี้" onClick={() => removeSerial(s)}><Icons.trash /></button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )
@@ -489,6 +494,15 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
           </div>
         </div>
       </div>
+
+      {barcodeUnit && (
+        <BarcodeModal
+          value={`${id}-${barcodeUnit.id}`}
+          text={barcodeUnit.sku || barcodeUnit.serial}
+          heading={`${product.name} · ${barcodeUnit.serial}`}
+          onClose={() => setBarcodeUnit(null)}
+        />
+      )}
     </div>
   );
 }

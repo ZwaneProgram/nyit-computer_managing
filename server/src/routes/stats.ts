@@ -57,6 +57,9 @@ export async function statsRoutes(app: FastifyInstance) {
                where si.bundle_id is not null and ($1::timestamptz is null or s.created_at >= $1)`, [since]),
       // --- top products (range) ---
       query(`select p.id, p.name,
+                     (select ps.image_url from product_serials ps
+                        where ps.product_id=p.id and ps.image_url is not null
+                        order by (ps.status='in_stock') desc, ps.price asc nulls last limit 1) image_url,
                      sum(si.qty) qty, sum(si.unit_price*si.qty) revenue,
                      sum((si.unit_price-si.unit_cost)*si.qty) profit
                from sale_items si
@@ -66,6 +69,9 @@ export async function statsRoutes(app: FastifyInstance) {
                group by p.id order by qty desc limit 5`, [since]),
       // --- low stock (snapshot; used by Dashboard) ---
       query(`select p.id, p.name, p.brand, c.name category_name, p.low,
+                     (select ps.image_url from product_serials ps
+                        where ps.product_id=p.id and ps.image_url is not null
+                        order by (ps.status='in_stock') desc, ps.price asc nulls last limit 1) image_url,
                      coalesce(s.cnt,0)::int stock
                from products p left join categories c on c.id=p.category_id
                left join (select product_id, count(*) cnt from product_serials where status='in_stock' group by product_id) s
@@ -192,12 +198,13 @@ export async function statsRoutes(app: FastifyInstance) {
       categoryShare,
       categoryUnits: (catUnits.rows as Record<string, unknown>[]).map((r) => ({ label: r.label as string, units: n(r.units) })),
       topProducts: (topProd.rows as Record<string, unknown>[]).map((r) => ({
-        id: Number(r.id), name: r.name as string, sku: null as string | null, image_url: null as string | null,
+        id: Number(r.id), name: r.name as string, sku: null as string | null,
+        image_url: (r.image_url as string) ?? null,
         qty: n(r.qty), revenue: n(r.revenue), profit: n(r.profit),
       })),
       lowStock: (low.rows as Record<string, unknown>[]).map((r) => ({
         id: Number(r.id), name: r.name as string, sku: null as string | null, brand: (r.brand as string) ?? null,
-        image_url: null as string | null, category_name: (r.category_name as string) ?? null,
+        image_url: (r.image_url as string) ?? null, category_name: (r.category_name as string) ?? null,
         stock: n(r.stock), low: n(r.low),
       })),
       bundlePerformance: (bundlePerf.rows as Record<string, unknown>[]).map((r) => {
