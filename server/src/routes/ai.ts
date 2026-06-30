@@ -150,24 +150,146 @@ function parseJson(raw: string): Record<string, unknown> | null {
 const asLines = (v: unknown): string[] =>
   Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : [];
 
+// ---------- rate limiting ----------
+// The free Gemini tier caps requests per minute (flash-lite ≈ 15/min), so when
+// the owner clicks "generate" several times in a row we'd get 429s. To avoid
+// that we run every Gemini call through one queue: calls never fire in parallel,
+// we keep a minimum gap between them, and transient 429/503 errors are retried
+// with backoff (honoring Google's suggested retryDelay). Tune with env vars:
+//   GEMINI_RPM (default 12), GEMINI_MAX_RETRIES (default 4).
+const RPM = Math.max(1, Number(process.env.GEMINI_RPM || 12));
+const MIN_GAP_MS = Math.ceil(60_000 / RPM);
+const MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_MAX_RETRIES || 4));
+const MAX_BACKOFF_MS = 30_000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Turn a raw Gemini error into a short Thai message for the UI.
+function friendlyAiError(err: unknown): string {
+  const msg = String((err as Error)?.message || '');
+  if (msg.includes('[429')) return 'โควต้า AI ของวันนี้/นาทีนี้เต็มแล้ว กรุณารอสักครู่แล้วลองใหม่ (Gemini rate limit)';
+  if (msg.includes('[503') || /overloaded|unavailable/i.test(msg)) return 'เซิร์ฟเวอร์ AI มีคนใช้งานหนาแน่น กรุณาลองใหม่อีกครั้ง';
+  return msg || 'เรียกใช้ AI ไม่สำเร็จ';
+}
+
+let queueTail: Promise<unknown> = Promise.resolve();
+let lastCallAt = 0;
+
+// Only retry genuinely transient errors: the model being overloaded (503).
+// We deliberately do NOT retry 429 — on the free tier a 429 usually means the
+// daily/quota budget is spent, and each retry is another request that counts
+// against quota, so retrying makes it worse. The queue's spacing (below) is
+// what prevents per-minute 429s; a 429 that still slips through is surfaced
+// immediately instead of burning more quota.
+function isOverloaded(err: unknown): boolean {
+  const msg = String((err as Error)?.message || '');
+  return msg.includes('[503') || /overloaded|unavailable/i.test(msg);
+}
+
+// Serialize + space out + retry every Gemini request.
+async function withRateLimit<T>(fn: () => Promise<T>): Promise<T> {
+  const run = async (): Promise<T> => {
+    const gap = lastCallAt + MIN_GAP_MS - Date.now();
+    if (gap > 0) await sleep(gap);
+
+    for (let attempt = 0; ; attempt++) {
+      try {
+        lastCallAt = Date.now();
+        return await fn();
+      } catch (err) {
+        if (attempt >= MAX_RETRIES || !isOverloaded(err)) throw err;
+        const backoff = Math.min(2_000 * 2 ** attempt, MAX_BACKOFF_MS);
+        await sleep(backoff);
+      }
+    }
+  };
+  const result = queueTail.then(run, run);
+  // Keep the chain alive even if this call rejects, so the queue never stalls.
+  queueTail = result.catch(() => {});
+  return result;
+}
+
 async function callGemini(prompt: string): Promise<string> {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
-  const model = genAI.getGenerativeModel({ model: MODEL() });
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+  return withRateLimit(async () => {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
+    const model = genAI.getGenerativeModel({ model: MODEL() });
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  });
 }
 
 // Same as callGemini but with Google Search grounding enabled.
 // Gemini will search real manufacturer/retailer pages before answering.
 async function callGeminiWithSearch(prompt: string): Promise<string> {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
-  const model = genAI.getGenerativeModel({
-    model: MODEL(),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tools: [{ googleSearch: {} } as any],
+  return withRateLimit(async () => {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
+    const model = genAI.getGenerativeModel({
+      model: MODEL(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tools: [{ googleSearch: {} } as any],
+    });
+    const result = await model.generateContent(prompt);
+    return result.response.text();
   });
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+}
+
+// Fetch the best-matching product page from JIB.co.th and return stripped text.
+// Scores all search result links by how many words from name+model appear in the
+// URL slug, then picks the highest scorer — avoids grabbing the wrong variant
+// (e.g. Trinity OC when the user wants Solid Core OC).
+// Returns null when scraping fails so the caller can fall back gracefully.
+async function scrapeJib(
+  name: string,
+  model: string,
+): Promise<{ text: string; title: string; url: string } | null> {
+  const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+  const q = encodeURIComponent(`${name} ${model}`.trim());
+  try {
+    const searchRes = await fetch(
+      `https://www.jib.co.th/web/product/product_search/0/0/0/0/0/0/0/0/${q}`,
+      { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) },
+    );
+    const searchHtml = await searchRes.text();
+
+    // Collect all product page links from search results
+    const links = [...searchHtml.matchAll(/href="(\/web\/product\/\d+\/[^"#?]+)"/g)]
+      .map((m) => m[1])
+      .filter((v, i, a) => a.indexOf(v) === i); // dedupe
+    if (!links.length) return null;
+
+    // Score each link by how many words from name+model appear in its slug
+    const terms = `${name} ${model}`.toLowerCase().split(/\s+/).filter(Boolean);
+    const best = links
+      .map((link) => ({ link, score: terms.filter((t) => link.toLowerCase().includes(t)).length }))
+      .sort((a, b) => b.score - a.score)[0].link;
+
+    const productUrl = `https://www.jib.co.th${best}`;
+    const productRes = await fetch(productUrl, {
+      headers: { 'User-Agent': UA },
+      signal: AbortSignal.timeout(8000),
+    });
+    const productHtml = await productRes.text();
+
+    // Extract page title (h1 or <title>)
+    const titleMatch = productHtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)
+      ?? productHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch
+      ? titleMatch[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+      : best.split('/').pop()?.replace(/-/g, ' ') ?? '';
+
+    const text = productHtml
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&[a-z]+;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 5000);
+
+    return { text, title, url: productUrl };
+  } catch {
+    return null;
+  }
 }
 
 export async function aiRoutes(app: FastifyInstance) {
@@ -199,12 +321,14 @@ export async function aiRoutes(app: FastifyInstance) {
       if (!description) return reply.code(502).send({ error: 'AI ไม่สามารถสร้างรายละเอียดได้' });
       return { description };
     } catch (err) {
-      return reply.code(502).send({ error: (err as Error).message || 'เรียกใช้ AI ไม่สำเร็จ' });
+      return reply.code(502).send({ error: friendlyAiError(err) });
     }
   });
 
   // POST /api/ai/generate-product-specs — generate a structured spec sheet as a
   // JSON array of [key, value] pairs from the product name + model number.
+  // Uses plain callGemini (no Search grounding) with category-specific fields
+  // to keep the response focused and avoid billing/quota issues.
   app.post('/api/ai/generate-product-specs', { preHandler: requireAuth() }, async (req, reply) => {
     if (!process.env.GEMINI_API_KEY) {
       return reply.code(503).send({ error: 'ยังไม่ได้ตั้งค่า GEMINI_API_KEY' });
@@ -214,51 +338,65 @@ export async function aiRoutes(app: FastifyInstance) {
     const model = b.model?.trim() || '';
     if (!name && !model) return reply.code(400).send({ error: 'กรุณาระบุชื่อสินค้าหรือรุ่น' });
 
-    const prompt = `You are a computer hardware expert. Search the web for the official product specifications of:
-Product: "${name}"${model ? ` Model number: ${model}` : ''}${b.category ? ` Category: ${b.category}` : ''}
+    const CATEGORY_FIELDS: Record<string, string[]> = {
+      gpu:        ['GPU Model', 'Memory Size', 'Memory Type', 'HDMI Port', 'Display Port', 'Power Connector', 'Power Requirement'],
+      cpu:        ['Socket', 'Cores / Threads', 'Base Clock', 'Boost Clock', 'Cache', 'TDP'],
+      ram:        ['Capacity', 'Speed', 'Type', 'Form Factor', 'Latency (CL)'],
+      ssd:        ['Capacity', 'Interface', 'Form Factor', 'Read Speed', 'Write Speed'],
+      mb:         ['Socket', 'Form Factor', 'Chipset', 'Memory Slots', 'Max Memory', 'PCIe Slots'],
+      psu:        ['Wattage', 'Efficiency Rating', 'Modular', 'Form Factor'],
+      monitor:    ['Panel Size', 'Resolution', 'Refresh Rate', 'Panel Type', 'Response Time', 'Ports'],
+      cooler:     ['Type', 'Socket Compatibility', 'TDP Rating', 'Fan Size'],
+      case:       ['Form Factor', 'Drive Bays', 'Front I/O', 'Dimensions'],
+      peripheral: ['Type', 'Connection', 'Interface'],
+    };
 
-Search the manufacturer's official product page AND at least 2-3 retailer/review sites (e.g. Newegg, Amazon, TechPowerUp, manufacturer.com) to cross-reference the specs.
-For any spec where sources disagree (e.g. power connector listed as "1 x 16-pin" on one site but "3 x 8-pin adapter to 16-pin" on another), use the MOST COMPLETE AND ACCURATE value that includes all relevant detail.
+    const slug = (b.category ?? '').toLowerCase().trim();
+    const fields = CATEGORY_FIELDS[slug] ?? ['Model', 'Key Specification 1', 'Key Specification 2', 'Key Specification 3'];
+    const fieldList = fields.map((f) => `    ["${f}", "..."]`).join(',\n');
 
-Return ONLY a JSON object — no markdown, no explanation, no source citations:
+    // Scrape JIB first; if it returns a result use that as the source, otherwise
+    // fall back to Gemini's own training knowledge (still no Search grounding).
+    const jib = await scrapeJib(name, model);
+
+    const prompt = jib
+      ? `You are a computer hardware expert extracting specs from a product page.
+Product: "${name}"${model ? ` (${model})` : ''}
+
+Here is the raw text content scraped from JIB.co.th product page:
+---
+${jib.text}
+---
+
+Extract ONLY the fields below from the text above. If a field is not found in the text, omit it.
+Return ONLY a JSON object — no markdown, no explanation:
 {
   "specs": [
-    ["Brand", "..."],
-    ["GPU Series", "..."],
-    ["GPU Model", "..."],
-    ["Memory Size", "..."],
-    ["Memory Type", "..."],
-    ["Bus Standards", "..."],
-    ["OpenGL", "..."],
-    ["CUDA® Cores", "..."],
-    ["Memory Interface", "..."],
-    ["Boost Clock", "..."],
-    ["Memory Clock", "..."],
-    ["Max Digital Resolution", "..."],
-    ["HDMI Port", "..."],
-    ["Display Port", "..."],
-    ["Power Connector", "..."],
-    ["Power Requirement", "..."],
-    ["Dimension", "..."],
-    ["Warranty", "..."]
+${fieldList}
   ]
-}
-Rules:
-- Only include rows you found on real sources — omit anything you are guessing.
-- For Power Connector: include the full cable description (e.g. "3 x 8-pin to 1 x 16-pin adapter cable") not just the socket type.
-- Use exact manufacturer terminology for key names.
-- Values in English.`;
+}`
+      : `You are a computer hardware expert.
+Product: "${name}"${model ? ` (${model})` : ''}${b.category ? ` — Category: ${b.category}` : ''}
+
+Return ONLY the fields below based on your training knowledge. Omit any field you are not confident about.
+Return ONLY a JSON object — no markdown, no explanation:
+{
+  "specs": [
+${fieldList}
+  ]
+}`;
 
     try {
-      const raw = await callGeminiWithSearch(prompt);
+      const raw = await callGemini(prompt);
       const data = parseJson(raw);
       const specs = data?.specs;
       if (!Array.isArray(specs) || !specs.length) {
         return reply.code(502).send({ error: 'AI ไม่สามารถสร้างสเปกได้' });
       }
-      return { specs };
+      const jib_source = jib ? { title: jib.title, url: jib.url } : undefined;
+      return { specs, jib_source };
     } catch (err) {
-      return reply.code(502).send({ error: (err as Error).message || 'เรียกใช้ AI ไม่สำเร็จ' });
+      return reply.code(502).send({ error: friendlyAiError(err) });
     }
   });
 
@@ -330,9 +468,7 @@ Rules:
       return { post: post.text };
     } catch (err) {
       app.log.error(err);
-      return reply
-        .code(502)
-        .send({ error: (err as Error).message || 'เรียกใช้ Gemini ไม่สำเร็จ' });
+      return reply.code(502).send({ error: friendlyAiError(err) });
     }
   });
 }

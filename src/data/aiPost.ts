@@ -48,12 +48,11 @@ export async function generateProductSpecs(
   name: string,
   model: string,
   category?: string,
-): Promise<[string, string][]> {
-  const { specs } = await http.post<{ specs: [string, string][] }>(
+): Promise<{ specs: [string, string][]; jib_source?: { title: string; url: string } }> {
+  return http.post<{ specs: [string, string][]; jib_source?: { title: string; url: string } }>(
     '/api/ai/generate-product-specs',
     { name, model, category },
   );
-  return specs;
 }
 
 // Tidy a post for display/copy: normalise escaped newlines and collapse runs of

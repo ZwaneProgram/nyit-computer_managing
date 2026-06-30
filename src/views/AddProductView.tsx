@@ -57,6 +57,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
   const [units, setUnits] = useState<UnitDraft[]>([]);
   const [busy, setBusy] = useState(false);
   const [generatingSpecs, setGeneratingSpecs] = useState(false);
+  const [jibSource, setJibSource] = useState<{ title: string; url: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -97,10 +98,12 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
   const genSpecs = async () => {
     setGeneratingSpecs(true);
     setError(null);
+    setJibSource(null);
     try {
       const catName = cats.find((c) => c.id === form.category_id)?.name;
-      const specs = await generateProductSpecs(form.name, form.model, catName);
+      const { specs, jib_source } = await generateProductSpecs(form.name, form.model, catName);
       setForm((f) => ({ ...f, specsText: specs.map(([k, v]) => `${k}: ${v}`).join('\n') }));
+      if (jib_source) setJibSource(jib_source);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'สร้างสเปกไม่สำเร็จ');
     } finally {
@@ -231,6 +234,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
             <div className="field" style={{ gridColumn: '1 / -1' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
                 <label className="field-label" style={{ margin: 0 }}>สเปกสินค้า (แสดงเป็นตารางบนหน้าร้าน)</label>
+                {/* ✨ สร้างสเปก AI — disabled temporarily
                 <button
                   type="button"
                   className="btn btn-sm btn-ghost"
@@ -240,6 +244,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
                 >
                   {generatingSpecs ? 'กำลังสร้าง...' : '✨ สร้างสเปก AI'}
                 </button>
+                */}
               </div>
               <textarea
                 className="textarea mono"
@@ -250,6 +255,15 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
                 style={{ fontSize: 12 }}
               />
               <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>แต่ละบรรทัด: ชื่อสเปก: ค่า — เช่น <code>CUDA® Cores: 21760</code></div>
+              {jibSource && (
+                <div style={{ fontSize: 11, marginTop: 4, color: 'var(--color-warning, #d97706)' }}>
+                  ⚠️ ข้อมูลจาก JIB:{' '}
+                  <a href={jibSource.url} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
+                    {jibSource.title}
+                  </a>
+                  {' '}— ตรวจสอบว่าตรงกับสินค้าที่ต้องการ
+                </div>
+              )}
             </div>
           </div>
         </div>
