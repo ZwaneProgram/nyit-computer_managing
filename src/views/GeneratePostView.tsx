@@ -9,6 +9,7 @@ import {
   type Serial,
 } from '../data/inventory';
 import { fetchBundles, type Bundle } from '../data/bundles';
+import { useUnitMatches } from '../hooks/useUnitMatches';
 import { generatePost, formatPost, postToFacebook } from '../data/aiPost';
 
 interface ViewProps {
@@ -65,7 +66,10 @@ export function GeneratePostView({ showToast }: ViewProps) {
     setGpuPicked(new Set(gpus.map((g) => g.id)));
   }, [gpus]);
 
+  const unitMatches = useUnitMatches(search);
+
   const filtered = useMemo(() => {
+    const matchedPids = new Set(unitMatches.map((m) => m.product_id));
     const q = search.trim().toLowerCase();
     const list = products.filter((p) => p.stock > 0 || p.draft_count === 0);
     if (!q) return list;
@@ -73,23 +77,28 @@ export function GeneratePostView({ showToast }: ViewProps) {
       (p) =>
         p.name.toLowerCase().includes(q) ||
         (p.model ?? '').toLowerCase().includes(q) ||
-        (p.category_name ?? '').toLowerCase().includes(q),
+        (p.category_name ?? '').toLowerCase().includes(q) ||
+        matchedPids.has(p.id), // Serial Number / SKU hit
     );
-  }, [products, search]);
+  }, [products, search, unitMatches]);
 
   // Load a single product's units so the user can pick a specific one.
+  // If the product was surfaced by a serial/SKU search, pre-select that unit.
   const selectSingle = useCallback(async (id: number) => {
     setSingleId(id);
     setSerialId(null);
     setSerials([]);
     try {
       const { serials: s } = await fetchProduct(id);
-      setSerials(s.filter((u) => u.status === 'in_stock'));
+      const inStock = s.filter((u) => u.status === 'in_stock');
+      setSerials(inStock);
+      const hit = unitMatches.find((m) => m.product_id === id && inStock.some((u) => u.id === m.id));
+      if (hit) setSerialId(hit.id);
     } catch (err) {
       fail(err, 'โหลดหน่วยสินค้าไม่สำเร็จ');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [unitMatches]);
 
   const togglePick = (id: number) =>
     setPicked((prev) => {
@@ -299,7 +308,7 @@ function SingleItemPicker(props: {
     <>
       <input
         className="input"
-        placeholder="ค้นหาสินค้า (ชื่อ / รุ่น / หมวดหมู่)"
+        placeholder="ค้นหา (ชื่อ / รุ่น / หมวดหมู่ / Serial / SKU)"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         style={{ marginBottom: 10 }}
@@ -390,7 +399,7 @@ function SetupPicker(props: {
         <>
           <input
             className="input"
-            placeholder="ค้นหาสินค้าเพื่อเพิ่มเข้าชุด"
+            placeholder="ค้นหาเพื่อเพิ่มเข้าชุด (ชื่อ / Serial / SKU)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ marginBottom: 10 }}

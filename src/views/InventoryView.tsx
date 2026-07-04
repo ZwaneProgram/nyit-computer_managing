@@ -18,6 +18,7 @@ import {
   type UnitInput,
 } from '../data/inventory';
 import { WARRANTY_PRESETS, isPresetWarranty } from '../data/warranty';
+import { useUnitMatches } from '../hooks/useUnitMatches';
 import { ApiError } from '../lib/api';
 import type { ViewId } from '../types';
 
@@ -69,16 +70,21 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
   useEffect(() => { loadList(); }, [loadList]);
   useEffect(() => { fetchCategories().then(setCats).catch(() => {}); }, []);
 
+  const unitMatches = useUnitMatches(q);
+
   const filtered = useMemo(() => {
+    const matchedPids = new Set(unitMatches.map((m) => m.product_id));
     let arr = products.slice();
     if (cat !== 'all') arr = arr.filter((p) => p.category_id === cat);
     if (stockFilter === 'out') arr = arr.filter((p) => p.stock === 0);
     if (stockFilter === 'in') arr = arr.filter((p) => p.stock > 0);
     if (q) {
       const s = q.toLowerCase();
+      // Match catalog name/model, OR a Serial Number / SKU of one of its units.
       arr = arr.filter((p) =>
         p.name.toLowerCase().includes(s) ||
-        (p.model ?? '').toLowerCase().includes(s));
+        (p.model ?? '').toLowerCase().includes(s) ||
+        matchedPids.has(p.id));
     }
     // Date-range filtering is done server-side (by unit added-dates).
     const sortVal = (p: Product): string | number =>
@@ -94,7 +100,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
       return sort.dir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [products, q, cat, stockFilter, sort]);
+  }, [products, q, cat, stockFilter, sort, unitMatches]);
 
   const pageItems = filtered.slice((page - 1) * perPage, page * perPage);
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
@@ -168,7 +174,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
         <div className="filterbar" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
           <div className="search grow">
             <Icons.search />
-            <input placeholder="ค้นหาชื่อสินค้า หรือรุ่น..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+            <input placeholder="ค้นหาชื่อ, รุ่น, Serial หรือ SKU..." value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
           </div>
           <select className="select select-auto" value={cat} onChange={(e) => { setCat(e.target.value === 'all' ? 'all' : Number(e.target.value)); setPage(1); }}>
             <option value="all">ทุกหมวดหมู่</option>
