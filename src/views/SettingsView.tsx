@@ -421,23 +421,23 @@ function AccountsCard({ showToast, fail }: { showToast: (m: string) => void; fai
 
       <div style={{ borderTop: '1px solid var(--border)', marginTop: 16, paddingTop: 16 }}>
         <h4 style={{ margin: '0 0 10px' }}>เพิ่มบัญชีใหม่</h4>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <Field label="ชื่อผู้ใช้" style={{ flex: 1, minWidth: 130 }}>
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-2.5">
+          <Field label="ชื่อผู้ใช้" className="sm:flex-1 sm:min-w-[130px]">
             <input className="input" value={nu} onChange={(e) => setNu(e.target.value)} />
           </Field>
-          <Field label="ชื่อ (ไม่บังคับ)" style={{ flex: 1, minWidth: 130 }}>
+          <Field label="ชื่อ (ไม่บังคับ)" className="sm:flex-1 sm:min-w-[130px]">
             <input className="input" value={nf} onChange={(e) => setNf(e.target.value)} />
           </Field>
-          <Field label="รหัสผ่าน" style={{ flex: 1, minWidth: 130 }}>
+          <Field label="รหัสผ่าน" className="sm:flex-1 sm:min-w-[130px]">
             <input className="input" type="text" value={np} onChange={(e) => setNp(e.target.value)} />
           </Field>
-          <Field label="สิทธิ์" style={{ width: 130 }}>
+          <Field label="สิทธิ์" className="sm:w-[130px]">
             <select className="input" value={nr} onChange={(e) => setNr(e.target.value as 'owner' | 'staff')}>
               <option value="staff">พนักงาน</option>
               <option value="owner">เจ้าของร้าน</option>
             </select>
           </Field>
-          <button className="btn btn-primary" onClick={add} disabled={adding}><Icons.plus /> เพิ่ม</button>
+          <button className="btn btn-primary sm:w-auto" onClick={add} disabled={adding}><Icons.plus /> เพิ่ม</button>
         </div>
       </div>
     </div>
@@ -450,14 +450,16 @@ function Field({
   hint,
   children,
   style,
+  className,
 }: {
   label: string;
   hint?: string;
   children: React.ReactNode;
   style?: React.CSSProperties;
+  className?: string;
 }) {
   return (
-    <label style={{ display: 'block', ...style }}>
+    <label className={className} style={{ display: 'block', ...style }}>
       <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 5 }}>{label}</div>
       {children}
       {hint && <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>{hint}</div>}

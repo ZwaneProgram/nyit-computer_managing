@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Icons } from '../components/Icons';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import { Sparkline } from '../components/charts/Sparkline';
 import { AreaChart } from '../components/charts/AreaChart';
 import { Donut } from '../components/charts/Donut';
@@ -19,6 +20,86 @@ function Thumb({ url }: { url: string | null }) {
     <div className="thumb">
       {url ? <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
         : <span style={{ fontSize: 7, color: 'var(--ink-4)' }}>ไม่มีรูป</span>}
+    </div>
+  );
+}
+
+/**
+ * Low-stock alerts list. Collapsed by default (10 rows on desktop, 5 on phones)
+ * behind a "show more" button; once expanded it paginates — 20/page on desktop,
+ * 10 on tablet, 5 on phones — so a long list never floods the dashboard.
+ */
+function LowStockAlerts({ items }: { items: Stats['lowStock'] }) {
+  const isPhone = useMediaQuery('(max-width: 600px)');
+  const isNarrow = useMediaQuery('(max-width: 1100px)');
+  const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(1);
+
+  const total = items.length;
+  const collapsedCount = isPhone ? 5 : 10;
+  const pageSize = isPhone ? 5 : isNarrow ? 10 : 20;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // Keep the page within range when the viewport (page size) or data changes.
+  useEffect(() => {
+    setPage((p) => Math.min(Math.max(1, p), Math.max(1, Math.ceil(total / pageSize))));
+  }, [pageSize, total]);
+
+  const shown = expanded
+    ? items.slice((page - 1) * pageSize, page * pageSize)
+    : items.slice(0, collapsedCount);
+
+  return (
+    <div className="card">
+      <div className="card-pad">
+        <div className="section-h">
+          <Icons.warning style={{ color: 'var(--warn)' }} />
+          <div><h3>แจ้งเตือนสินค้าใกล้หมด</h3><div className="muted section-sub">มี {total} รายการที่ควรสั่งเพิ่ม</div></div>
+        </div>
+        <div className="table-wrap">
+          <table className="tbl tbl-cards">
+            <thead><tr><th>สินค้า</th><th>SKU</th><th style={{ textAlign: 'right' }}>คงเหลือ</th><th style={{ textAlign: 'right' }}>จุดสั่งซื้อ</th><th>สถานะ</th></tr></thead>
+            <tbody>
+              {shown.map((p) => (
+                <tr key={p.id}>
+                  <td className="cell-primary"><div className="product-cell"><Thumb url={p.image_url} /><div><div className="product-cell-name">{p.name}</div><div className="product-cell-meta">{p.brand || '—'}</div></div></div></td>
+                  <td className="mono" data-label="SKU">{p.sku || '—'}</td>
+                  <td className="num" data-label="คงเหลือ" style={{ textAlign: 'right' }}>{p.stock}</td>
+                  <td className="num muted" data-label="จุดสั่งซื้อ" style={{ textAlign: 'right' }}>{p.low}</td>
+                  <td data-label="สถานะ">{p.stock === 0 ? <span className="chip chip-neg chip-dot">หมดสต๊อก</span> : <span className="chip chip-warn chip-dot">เหลือน้อย</span>}</td>
+                </tr>
+              ))}
+              {total === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', padding: 30 }} className="muted">ไม่มีสินค้าใกล้หมด 👍</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        {!expanded && total > collapsedCount && (
+          <button className="btn btn-ghost w-full justify-center mt-1" onClick={() => { setExpanded(true); setPage(1); }}>
+            แสดงทั้งหมด ({total}) <Icons.arrowDown />
+          </button>
+        )}
+
+        {expanded && (
+          <>
+            <div className="pagn">
+              <div>แสดง {total === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} จาก {total} รายการ</div>
+              {totalPages > 1 && (
+                <div className="pagn-pages">
+                  <button onClick={() => setPage(Math.max(1, page - 1))}>‹</button>
+                  {Array.from({ length: totalPages }).map((_, i) => (
+                    <button key={i} data-active={page === i + 1} onClick={() => setPage(i + 1)}>{i + 1}</button>
+                  ))}
+                  <button onClick={() => setPage(Math.min(totalPages, page + 1))}>›</button>
+                </div>
+              )}
+            </div>
+            <button className="btn btn-ghost btn-sm w-full justify-center" onClick={() => { setExpanded(false); setPage(1); }}>
+              ย่อรายการ
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -57,7 +138,7 @@ export function DashboardView({ onNav }: ViewProps) {
   const maxSold = Math.max(1, ...stats.topProducts.map((t) => t.qty));
 
   return (
-    <div className="grid" style={{ gap: 'var(--gap)' }}>
+    <div className="grid grid-cols-1" style={{ gap: 'var(--gap)' }}>
       <div className="page-head">
         <div>
           <div className="page-title">ภาพรวมร้าน 👋</div>
@@ -161,31 +242,7 @@ export function DashboardView({ onNav }: ViewProps) {
         </div>
       </div>
 
-      <div className="card">
-        <div className="card-pad">
-          <div className="section-h">
-            <Icons.warning style={{ color: 'var(--warn)' }} />
-            <div><h3>แจ้งเตือนสินค้าใกล้หมด</h3><div className="muted section-sub">มี {stats.lowStock.length} รายการที่ควรสั่งเพิ่ม</div></div>
-          </div>
-          <div className="table-wrap">
-            <table className="tbl">
-              <thead><tr><th>สินค้า</th><th>SKU</th><th style={{ textAlign: 'right' }}>คงเหลือ</th><th style={{ textAlign: 'right' }}>จุดสั่งซื้อ</th><th>สถานะ</th></tr></thead>
-              <tbody>
-                {stats.lowStock.map((p) => (
-                  <tr key={p.id}>
-                    <td><div className="product-cell"><Thumb url={p.image_url} /><div><div className="product-cell-name">{p.name}</div><div className="product-cell-meta">{p.brand || '—'}</div></div></div></td>
-                    <td className="mono">{p.sku || '—'}</td>
-                    <td className="num" style={{ textAlign: 'right' }}>{p.stock}</td>
-                    <td className="num muted" style={{ textAlign: 'right' }}>{p.low}</td>
-                    <td>{p.stock === 0 ? <span className="chip chip-neg chip-dot">หมดสต๊อก</span> : <span className="chip chip-warn chip-dot">เหลือน้อย</span>}</td>
-                  </tr>
-                ))}
-                {stats.lowStock.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', padding: 30 }} className="muted">ไม่มีสินค้าใกล้หมด 👍</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      <LowStockAlerts items={stats.lowStock} />
     </div>
   );
 }
