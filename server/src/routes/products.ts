@@ -139,6 +139,28 @@ export async function productRoutes(app: FastifyInstance) {
     return { products: rows };
   });
 
+  // Look up in-stock units by Serial Number or SKU (for the sales search).
+  //   ?q=<term>  → partial, case-insensitive match on serial OR sku.
+  // Returns sellable (in_stock) units with their parent product's name/brand so
+  // the sales screen can surface the right product for a scanned/typed serial.
+  app.get('/api/products/unit-search', async (req) => {
+    const q = (req.query as { q?: string }).q?.trim() ?? '';
+    if (!q) return { units: [] };
+    const { rows } = await query(
+      `select ${UNIT_RETURN.split(', ').map((c) => `ps.${c}`).join(', ')}, ps.sale_id,
+              ps.product_id, p.name as product_name, p.brand as product_brand
+         from product_serials ps
+         join products p on p.id = ps.product_id
+        where ps.status = 'in_stock'
+          and (ps.serial ilike $1 or ps.sku ilike $1)
+        order by (lower(ps.serial) = lower($2) or lower(coalesce(ps.sku, '')) = lower($2)) desc,
+                 ps.serial
+        limit 20`,
+      [`%${q}%`, q],
+    );
+    return { units: rows };
+  });
+
   // One product, with all its units.
   app.get('/api/products/:id', async (req, reply) => {
     const { id } = req.params as { id: string };

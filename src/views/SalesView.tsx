@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icons } from '../components/Icons';
 import { fmtTHB } from '../data/format';
-import { fetchProduct, fetchProducts, type Product, type Serial } from '../data/inventory';
+import { fetchProduct, fetchProducts, searchUnits, type Product, type Serial, type UnitMatch } from '../data/inventory';
 import { fetchBundles, type Bundle } from '../data/bundles';
 import { createSale, fetchSales, type NewSale, type Sale } from '../data/sales';
 import { ApiError } from '../lib/api';
@@ -28,7 +28,9 @@ export function SalesView({ showToast }: ViewProps) {
   const [discount, setDiscount] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQ, setSearchQ] = useState('');
-  const [expandedPid, setExpandedPid] = useState<number | null>(null);
+  const [searchQDebounced, setSearchQDebounced] = useState('');
+  const [unitMatches, setUnitMatches] = useState<UnitMatch[]>([]);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [unitMap, setUnitMap] = useState<Record<number, Serial[]>>({});
 
   const [busy, setBusy] = useState(false);
@@ -73,13 +75,46 @@ export function SalesView({ showToast }: ViewProps) {
   useEffect(() => { if (mode === 'history') loadHistory(); }, [mode, loadHistory]);
 
   // Lazy-load a product's in-stock units when its picker row is expanded.
-  const loadUnits = async (pid: number) => {
+  const loadUnits = useCallback(async (pid: number) => {
     if (unitMap[pid]) return;
     try {
       const { serials } = await fetchProduct(pid);
       setUnitMap((m) => ({ ...m, [pid]: serials.filter((s) => s.status === 'in_stock') }));
     } catch { /* ignore */ }
+  }, [unitMap]);
+
+  const toggleExpanded = (pid: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(pid)) next.delete(pid);
+      else { next.add(pid); loadUnits(pid); }
+      return next;
+    });
   };
+
+  // Debounce the product search box, then look up matching serials/SKUs.
+  useEffect(() => {
+    const id = window.setTimeout(() => setSearchQDebounced(searchQ.trim()), 250);
+    return () => window.clearTimeout(id);
+  }, [searchQ]);
+
+  useEffect(() => {
+    if (!searchQDebounced) { setUnitMatches([]); return; }
+    let alive = true;
+    searchUnits(searchQDebounced)
+      .then((units) => { if (alive) setUnitMatches(units); })
+      .catch(() => { if (alive) setUnitMatches([]); });
+    return () => { alive = false; };
+  }, [searchQDebounced]);
+
+  // A serial/SKU match auto-expands its product and loads its units so the
+  // matched unit is shown ready to add.
+  useEffect(() => {
+    if (unitMatches.length === 0) return;
+    const pids = [...new Set(unitMatches.map((u) => u.product_id))];
+    setExpanded((prev) => { const next = new Set(prev); pids.forEach((p) => next.add(p)); return next; });
+    pids.forEach((p) => loadUnits(p));
+  }, [unitMatches, loadUnits]);
 
   const selectedBundle = bundles.find((b) => b.id === bundleId) ?? null;
   const chosenIds = new Set(cart.map((c) => c.serial.id));
@@ -97,10 +132,25 @@ export function SalesView({ showToast }: ViewProps) {
   const overStock = type === 'bundle' && !!selectedBundle && bundleQty > selectedBundle.stock;
   const canConfirm = !busy && !overStock && (type === 'item' ? cart.length > 0 : !!selectedBundle && bundleQty > 0);
 
-  const searchResults = products.filter((p) =>
-    p.stock > 0 &&
-    (searchQ ? p.name.toLowerCase().includes(searchQ.toLowerCase()) || (p.brand ?? '').toLowerCase().includes(searchQ.toLowerCase()) : true),
-  ).slice(0, 8);
+  // Set of unit ids that matched the serial/SKU search — highlighted in the list.
+  const matchedUnitIds = new Set(unitMatches.map((u) => u.id));
+
+  // Search results = products whose name/brand matches, PLUS products surfaced
+  // because one of their in-stock units matched by serial/SKU (those go first,
+  // so a scanned serial jumps straight to the right product).
+  const q = searchQ.trim().toLowerCase();
+  const byId = new Map(products.map((p) => [p.id, p]));
+  const unitMatchPids: number[] = [];
+  for (const u of unitMatches) {
+    if (!unitMatchPids.includes(u.product_id) && byId.has(u.product_id)) unitMatchPids.push(u.product_id);
+  }
+  const nameMatches = products.filter(
+    (p) => p.stock > 0 && (q ? p.name.toLowerCase().includes(q) || (p.brand ?? '').toLowerCase().includes(q) : true),
+  );
+  const searchResults = [
+    ...unitMatchPids.map((id) => byId.get(id)!).filter((p) => p.stock > 0),
+    ...nameMatches.filter((p) => !unitMatchPids.includes(p.id)),
+  ].slice(0, 8);
 
   const addUnitToCart = (product_name: string, serial: Serial) => {
     if (chosenIds.has(serial.id)) return;
@@ -111,7 +161,7 @@ export function SalesView({ showToast }: ViewProps) {
     setCart([]); setBundleId(null); setBundleQty(1);
     setCustomer({ name: '', phone: '', address: '', taxId: '' });
     setShipping(0); setDiscount(0);
-    setShowSearch(false); setSearchQ(''); setExpandedPid(null);
+    setShowSearch(false); setSearchQ(''); setSearchQDebounced(''); setUnitMatches([]); setExpanded(new Set());
   };
 
   const confirm = async () => {
@@ -288,38 +338,52 @@ export function SalesView({ showToast }: ViewProps) {
                     <div style={{ padding: '0 20px 12px' }}>
                       <div className="search" style={{ width: '100%' }}>
                         <Icons.search />
-                        <input autoFocus placeholder="ค้นหาสินค้าจากชื่อ หรือยี่ห้อ..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} />
+                        <input autoFocus placeholder="ค้นหาด้วยชื่อ, Serial หรือ SKU..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} />
                       </div>
                       <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 320, overflowY: 'auto' }}>
-                        {searchResults.map((p) => (
+                        {searchResults.map((p) => {
+                          const isOpen = expanded.has(p.id);
+                          // Matched (serial/SKU) units first, so the searched item is on top.
+                          const units = (unitMap[p.id] ?? [])
+                            .filter((u) => !chosenIds.has(u.id))
+                            .sort((a, b) => Number(matchedUnitIds.has(b.id)) - Number(matchedUnitIds.has(a.id)));
+                          return (
                           <div key={p.id}>
                             <button type="button" className="product-pick" style={{ width: '100%' }}
-                              onClick={() => { const next = expandedPid === p.id ? null : p.id; setExpandedPid(next); if (next != null) loadUnits(p.id); }}>
+                              onClick={() => toggleExpanded(p.id)}>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontWeight: 500 }}>{p.name}</div>
                                 <div className="muted mono" style={{ fontSize: 11.5 }}>{p.brand || '—'} · คงเหลือ {p.stock}</div>
                               </div>
                               <div className="num muted">{p.price_min == null ? '—' : `${fmtTHB(p.price_min)}+`}</div>
-                              {expandedPid === p.id ? <Icons.arrowDown style={{ width: 14, height: 14 }} /> : <Icons.arrowRight style={{ width: 14, height: 14 }} />}
+                              {isOpen ? <Icons.arrowDown style={{ width: 14, height: 14 }} /> : <Icons.arrowRight style={{ width: 14, height: 14 }} />}
                             </button>
-                            {expandedPid === p.id && (
+                            {isOpen && (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 0 6px 16px' }}>
-                                {(unitMap[p.id] ?? []).filter((u) => !chosenIds.has(u.id)).map((u) => (
-                                  <button key={u.id} type="button" className="product-pick" onClick={() => addUnitToCart(p.name, u)}>
+                                {units.map((u) => {
+                                  const hit = matchedUnitIds.has(u.id);
+                                  return (
+                                  <button key={u.id} type="button" className="product-pick" onClick={() => addUnitToCart(p.name, u)}
+                                    style={hit ? { borderColor: 'var(--accent)', background: 'var(--accent-soft-2)' } : undefined}>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div className="mono" style={{ fontSize: 12.5 }}>{u.serial}{u.sku ? ` · ${u.sku}` : ''}</div>
+                                      <div className="mono" style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        {u.serial}{u.sku ? ` · ${u.sku}` : ''}
+                                        {hit && <span className="chip chip-accent" style={{ fontSize: 10 }}>ตรงกับที่ค้นหา</span>}
+                                      </div>
                                       <div className="muted" style={{ fontSize: 11 }}>{u.warranty_months ? `รับประกัน ${u.warranty_months} เดือน` : 'ไม่มีประกัน'}</div>
                                     </div>
                                     <div className="num" style={{ fontWeight: 600 }}>{fmtTHB(u.price)}</div>
                                   </button>
-                                ))}
-                                {(unitMap[p.id] ?? []).filter((u) => !chosenIds.has(u.id)).length === 0 && (
+                                  );
+                                })}
+                                {units.length === 0 && (
                                   <div className="muted" style={{ padding: 8, fontSize: 12 }}>ไม่มีเครื่องว่างให้เลือก</div>
                                 )}
                               </div>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                         {searchResults.length === 0 && <div className="muted" style={{ padding: 12, textAlign: 'center' }}>ไม่พบสินค้า</div>}
                       </div>
                     </div>

@@ -165,6 +165,28 @@ export async function fetchProducts(opts: { drafts?: boolean; from?: string; to?
   return products.map(normProduct);
 }
 
+/** An in-stock unit matched by serial/SKU, carrying its parent product info. */
+export interface UnitMatch extends Serial {
+  product_id: number;
+  product_name: string;
+  product_brand: string | null;
+}
+
+/** Search in-stock units by Serial Number or SKU (partial, case-insensitive). */
+export async function searchUnits(q: string): Promise<UnitMatch[]> {
+  const term = q.trim();
+  if (!term) return [];
+  const { units } = await http.get<{ units: Record<string, unknown>[] }>(
+    `/api/products/unit-search?q=${encodeURIComponent(term)}`,
+  );
+  return units.map((u) => ({
+    ...normSerial(u),
+    product_id: Number(u.product_id),
+    product_name: u.product_name as string,
+    product_brand: (u.product_brand as string) ?? null,
+  }));
+}
+
 export async function fetchProduct(id: number): Promise<{ product: Product; serials: Serial[] }> {
   const r = await http.get<{ product: Record<string, unknown>; serials: Record<string, unknown>[] }>(
     `/api/products/${id}`,
