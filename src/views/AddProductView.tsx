@@ -10,7 +10,8 @@ import {
   type Category,
   type ProductInput,
 } from '../data/inventory';
-import { generateProductSpecs } from '../data/aiPost';
+// AI specs generator — disabled temporarily (re-enable together with the button + genSpecs below)
+// import { generateProductSpecs } from '../data/aiPost';
 import { fetchSettings } from '../data/settings';
 import { WARRANTY_PRESETS, isPresetWarranty } from '../data/warranty';
 import { ApiError } from '../lib/api';
@@ -56,8 +57,9 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
   });
   const [units, setUnits] = useState<UnitDraft[]>([]);
   const [busy, setBusy] = useState(false);
-  const [generatingSpecs, setGeneratingSpecs] = useState(false);
-  const [jibSource, setJibSource] = useState<{ title: string; url: string } | null>(null);
+  // AI specs generator state — disabled temporarily (re-enable with the button + genSpecs)
+  // const [generatingSpecs, setGeneratingSpecs] = useState(false);
+  // const [jibSource, setJibSource] = useState<{ title: string; url: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -95,6 +97,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
       .catch(() => setError('โหลดข้อมูลสินค้าไม่สำเร็จ'));
   }, [editId]);
 
+  /* AI specs generator — disabled temporarily (re-enable with the button + state above)
   const genSpecs = async () => {
     setGeneratingSpecs(true);
     setError(null);
@@ -110,6 +113,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
       setGeneratingSpecs(false);
     }
   };
+  */
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -255,6 +259,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
                 style={{ fontSize: 12 }}
               />
               <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>แต่ละบรรทัด: ชื่อสเปก: ค่า — เช่น <code>CUDA® Cores: 21760</code></div>
+              {/* AI specs (JIB source note) — disabled temporarily (re-enable with genSpecs)
               {jibSource && (
                 <div style={{ fontSize: 11, marginTop: 4, color: 'var(--color-warning, #d97706)' }}>
                   ⚠️ ข้อมูลจาก JIB:{' '}
@@ -264,6 +269,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
                   {' '}— ตรวจสอบว่าตรงกับสินค้าที่ต้องการ
                 </div>
               )}
+              */}
             </div>
           </div>
         </div>
