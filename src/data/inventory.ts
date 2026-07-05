@@ -21,6 +21,7 @@ export interface Serial {
   cost: number;
   price: number;
   warranty_months: number;
+  warranty_text: string | null;
   note: string | null;
   image_url: string | null;
   sale_id: number | null;
@@ -64,6 +65,7 @@ export interface UnitInput {
   cost: number;
   price: number;
   warranty_months: number;
+  warranty_text: string | null;
   note: string | null;
   image_url: string | null;
   draft: boolean;
@@ -120,6 +122,7 @@ function normSerial(r: Record<string, unknown>): Serial {
     cost: n(r.cost),
     price: n(r.price),
     warranty_months: n(r.warranty_months),
+    warranty_text: (r.warranty_text as string) ?? null,
     note: (r.note as string) ?? null,
     image_url: (r.image_url as string) ?? null,
     sale_id: r.sale_id == null ? null : Number(r.sale_id),

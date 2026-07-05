@@ -5,7 +5,21 @@ import { requireAuth } from '../auth';
 interface BundleBody {
   name?: string;
   discount_pct?: number;
+  warranty_months?: number;
+  warranty_text?: string | null;
   product_ids?: number[];
+}
+
+/** Clamp a warranty value to a non-negative integer (0 = shop warranty). */
+function cleanWarranty(input: unknown): number {
+  const n = Math.floor(Number(input));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Trim free-text warranty; empty becomes null. */
+function cleanWarrantyText(input: unknown): string | null {
+  const s = input == null ? '' : String(input).trim();
+  return s || null;
 }
 
 function cleanIds(input: unknown): number[] {
@@ -84,8 +98,8 @@ export async function bundleRoutes(app: FastifyInstance) {
     try {
       await client.query('begin');
       const { rows } = await client.query(
-        'insert into bundles (name, discount_pct, created_by) values ($1, $2, $3) returning *',
-        [b.name.trim(), b.discount_pct ?? 0, req.user!.id],
+        'insert into bundles (name, discount_pct, warranty_months, warranty_text, created_by) values ($1, $2, $3, $4, $5) returning *',
+        [b.name.trim(), b.discount_pct ?? 0, cleanWarranty(b.warranty_months), cleanWarrantyText(b.warranty_text), req.user!.id],
       );
       const bundle = rows[0];
       for (const pid of ids) {
@@ -115,8 +129,8 @@ export async function bundleRoutes(app: FastifyInstance) {
     try {
       await client.query('begin');
       const { rows } = await client.query(
-        'update bundles set name = $1, discount_pct = $2 where id = $3 returning *',
-        [b.name.trim(), b.discount_pct ?? 0, id],
+        'update bundles set name = $1, discount_pct = $2, warranty_months = $3, warranty_text = $4 where id = $5 returning *',
+        [b.name.trim(), b.discount_pct ?? 0, cleanWarranty(b.warranty_months), cleanWarrantyText(b.warranty_text), id],
       );
       if (!rows[0]) {
         await client.query('rollback');

@@ -3,6 +3,7 @@ import { Icons } from '../components/Icons';
 import { fmtTHB } from '../data/format';
 import { fetchCategories, fetchProducts, type Category, type Product } from '../data/inventory';
 import { createBundle, deleteBundle, fetchBundles, updateBundle, type Bundle } from '../data/bundles';
+import { BUNDLE_WARRANTY_PRESETS, isPresetWarranty, warrantyDisplay, resolveWarranty, SHOP_WARRANTY_30 } from '../data/warranty';
 import { ApiError } from '../lib/api';
 
 interface ViewProps {
@@ -32,6 +33,8 @@ export function BundlesView({ showToast }: ViewProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [discount, setDiscount] = useState(5);
+  const [warranty, setWarranty] = useState('0');
+  const [warrantyCustom, setWarrantyCustom] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState('');
@@ -74,11 +77,14 @@ export function BundlesView({ showToast }: ViewProps) {
   });
 
   const startCreate = () => {
-    setEditingId(null); setName(''); setDiscount(5); setSelected([]); setQ(''); setFilterCat('all');
+    setEditingId(null); setName(''); setDiscount(5); setWarranty('0'); setWarrantyCustom(false);
+    setSelected([]); setQ(''); setFilterCat('all');
     setMode('edit');
   };
   const startEdit = (b: Bundle) => {
     setEditingId(b.id); setName(b.name); setDiscount(b.discount_pct);
+    setWarranty(b.warranty_text ?? String(b.warranty_months));
+    setWarrantyCustom(!!b.warranty_text || !isPresetWarranty(String(b.warranty_months)));
     setSelected(b.items.map((i) => i.product_id)); setQ(''); setFilterCat('all');
     setMode('edit');
   };
@@ -87,11 +93,12 @@ export function BundlesView({ showToast }: ViewProps) {
     if (!name.trim() || !selected.length) return;
     setBusy(true);
     try {
+      const { warranty_months, warranty_text } = resolveWarranty(warranty, warrantyCustom);
       if (editingId != null) {
-        await updateBundle(editingId, name.trim(), discount, selected);
+        await updateBundle(editingId, name.trim(), discount, warranty_months, warranty_text, selected);
         showToast('บันทึกการแก้ไขชุดสินค้าแล้ว');
       } else {
-        await createBundle(name.trim(), discount, selected);
+        await createBundle(name.trim(), discount, warranty_months, warranty_text, selected);
         showToast('สร้างชุดสินค้าเรียบร้อย');
       }
       setMode('list');
@@ -146,6 +153,7 @@ export function BundlesView({ showToast }: ViewProps) {
                 <div className="card-pad">
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>{b.name}</div>
                   <div className="muted mono" style={{ fontSize: 11.5 }}>{b.items.length} ชิ้น · ขายได้อีก {b.stock} ชุด{b.sold ? ` · ขายไปแล้ว ${b.sold}` : ''}</div>
+                  <div className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>รับประกัน: {warrantyDisplay(b.warranty_months, b.warranty_text, SHOP_WARRANTY_30)}</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 14 }}>
                     <div>
                       <div className="muted" style={{ fontSize: 11.5 }}>ราคาชุด</div>
@@ -200,6 +208,23 @@ export function BundlesView({ showToast }: ViewProps) {
             <div className="field">
               <label className="field-label">ชื่อชุดสินค้า *</label>
               <input className="input" placeholder="เช่น ชุดประกอบสายเกมเมอร์ Tier S" value={name} onChange={(e) => setName(e.target.value)} style={{ fontSize: 15, fontWeight: 500 }} />
+            </div>
+            <div className="field" style={{ marginTop: 14 }}>
+              <label className="field-label">รับประกัน</label>
+              <select
+                className="select"
+                value={warrantyCustom ? 'custom' : warranty}
+                onChange={(e) => {
+                  if (e.target.value === 'custom') setWarrantyCustom(true);
+                  else { setWarrantyCustom(false); setWarranty(e.target.value); }
+                }}
+              >
+                {BUNDLE_WARRANTY_PRESETS.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
+                <option value="custom">กำหนดเอง...</option>
+              </select>
+              {warrantyCustom && (
+                <input className="input" style={{ marginTop: 6 }} type="text" placeholder="พิมพ์ได้ตามต้องการ เช่น 15 วัน, ประกันตลอดชีพ" value={isPresetWarranty(warranty) ? '' : warranty} onChange={(e) => setWarranty(e.target.value)} autoFocus />
+              )}
             </div>
           </div>
 

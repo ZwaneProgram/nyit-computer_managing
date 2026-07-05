@@ -236,6 +236,14 @@ update users set role = 'owner'
  where id = (select id from users order by id limit 1)
    and not exists (select 1 from users where role = 'owner');
 
+-- Per-bundle warranty (added 2026-07-05): 0 = shop warranty (30 days), >0 = months.
+alter table bundles add column if not exists warranty_months int not null default 0;
+
+-- Free-text warranty (added 2026-07-05): when set, overrides warranty_months for
+-- display (e.g. "15 วัน", "ประกันตลอดชีพ"). Applies to units and bundles.
+alter table product_serials add column if not exists warranty_text text;
+alter table bundles         add column if not exists warranty_text text;
+
 -- Seed the default product categories (idempotent).
 insert into categories (name, slug, sort) values
   ('การ์ดจอ', 'gpu', 1),

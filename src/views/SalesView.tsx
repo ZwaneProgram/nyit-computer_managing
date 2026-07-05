@@ -3,6 +3,7 @@ import { Icons } from '../components/Icons';
 import { fmtTHB } from '../data/format';
 import { fetchProduct, fetchProducts, searchUnits, type Product, type Serial, type UnitMatch } from '../data/inventory';
 import { fetchBundles, type Bundle } from '../data/bundles';
+import { warrantyDisplay } from '../data/warranty';
 import { createSale, fetchSales, type NewSale, type Sale } from '../data/sales';
 import { ApiError } from '../lib/api';
 
@@ -370,7 +371,7 @@ export function SalesView({ showToast }: ViewProps) {
                                         {u.serial}{u.sku ? ` · ${u.sku}` : ''}
                                         {hit && <span className="chip chip-accent" style={{ fontSize: 10 }}>ตรงกับที่ค้นหา</span>}
                                       </div>
-                                      <div className="muted" style={{ fontSize: 11 }}>{u.warranty_months ? `รับประกัน ${u.warranty_months} เดือน` : 'ไม่มีประกัน'}</div>
+                                      <div className="muted" style={{ fontSize: 11 }}>รับประกัน: {warrantyDisplay(u.warranty_months, u.warranty_text)}</div>
                                     </div>
                                     <div className="num" style={{ fontWeight: 600 }}>{fmtTHB(u.price)}</div>
                                   </button>

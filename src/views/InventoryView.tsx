@@ -17,7 +17,7 @@ import {
   type Serial,
   type UnitInput,
 } from '../data/inventory';
-import { WARRANTY_PRESETS, isPresetWarranty } from '../data/warranty';
+import { WARRANTY_PRESETS, isPresetWarranty, warrantyDisplay, resolveWarranty } from '../data/warranty';
 import { useUnitMatches } from '../hooks/useUnitMatches';
 import { ApiError } from '../lib/api';
 import type { ViewId } from '../types';
@@ -283,7 +283,7 @@ const toUnitInput = (u: UnitFormState): UnitInput => ({
   sku: u.sku.trim() || null,
   cost: Number(u.cost) || 0,
   price: Number(u.price) || 0,
-  warranty_months: Number(u.warranty) || 0,
+  ...resolveWarranty(u.warranty, u.warrantyCustom),
   note: u.note.trim() || null,
   image_url: u.image_url,
   draft: u.draft,
@@ -336,8 +336,9 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
     setEditId(s.id);
     setEditForm({
       serial: s.serial, sku: s.sku ?? '', cost: s.cost ? String(s.cost) : '',
-      price: s.price ? String(s.price) : '', warranty: String(s.warranty_months),
-      warrantyCustom: !isPresetWarranty(String(s.warranty_months)),
+      price: s.price ? String(s.price) : '',
+      warranty: s.warranty_text ?? String(s.warranty_months),
+      warrantyCustom: !!s.warranty_text || !isPresetWarranty(String(s.warranty_months)),
       note: s.note ?? '', image_url: s.image_url, draft: s.status === 'draft',
     });
   };
@@ -474,7 +475,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                         </td>
                         <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{fmtTHB(s.cost)}</td>
                         <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(s.price)}</td>
-                        <td data-label="รับประกัน"><span className="muted" style={{ fontSize: 12.5 }}>{s.warranty_months ? `${s.warranty_months} เดือน` : 'ไม่มี'}</span></td>
+                        <td data-label="รับประกัน"><span className="muted" style={{ fontSize: 12.5 }}>{warrantyDisplay(s.warranty_months, s.warranty_text)}</span></td>
                         <td data-label="เพิ่มเมื่อ"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(s.created_at).toLocaleDateString('en-GB')}</span></td>
                         <td data-label="สถานะ">{serialStatusChip(s.status)}</td>
                         <td className="cell-actions">
@@ -549,7 +550,7 @@ function UnitFields({ value, onChange, onUploadError }: {
           <option value="custom">อื่นๆ (กำหนดเอง)</option>
         </select>
         {value.warrantyCustom && (
-          <input className="input num" style={{ marginTop: 6 }} type="number" min="0" placeholder="ระบุจำนวนเดือน" value={isPresetWarranty(value.warranty) ? '' : value.warranty} onChange={(e) => set({ warranty: e.target.value })} autoFocus />
+          <input className="input" style={{ marginTop: 6 }} type="text" placeholder="พิมพ์ได้ตามต้องการ เช่น 15 วัน, ประกันตลอดชีพ" value={isPresetWarranty(value.warranty) ? '' : value.warranty} onChange={(e) => set({ warranty: e.target.value })} autoFocus />
         )}
       </div>
       <div className="field">

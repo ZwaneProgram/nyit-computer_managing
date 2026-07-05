@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icons } from '../components/Icons';
 import { ApiError } from '../lib/api';
 import { fmtTHB } from '../data/format';
+import { warrantyDisplay } from '../data/warranty';
 import {
   fetchProducts,
   fetchProduct,
@@ -342,7 +343,7 @@ function SingleItemPicker(props: {
             {serials.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.serial} — {fmtTHB(s.price)}
-                {s.warranty_months ? ` · ประกัน ${s.warranty_months} ด.` : ''}
+                {s.warranty_text || s.warranty_months ? ` · ประกัน ${warrantyDisplay(s.warranty_months, s.warranty_text)}` : ''}
               </option>
             ))}
           </select>

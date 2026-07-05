@@ -9,6 +9,7 @@ interface UnitInput {
   cost?: number;
   price?: number;
   warranty_months?: number;
+  warranty_text?: string | null;
   note?: string | null;
   image_url?: string | null;
   draft?: boolean;
@@ -35,6 +36,7 @@ interface CleanUnit {
   cost: number;
   price: number;
   warranty_months: number;
+  warranty_text: string | null;
   note: string | null;
   image_url: string | null;
   draft: boolean;
@@ -58,6 +60,7 @@ function cleanUnits(input: unknown): CleanUnit[] {
       cost: Number(u.cost) || 0,
       price: Number(u.price) || 0,
       warranty_months: Number(u.warranty_months) || 0,
+      warranty_text: u.warranty_text?.toString().trim() || null,
       note: u.note?.toString().trim() || null,
       image_url: u.image_url ?? null,
       draft: u.draft === true,
@@ -94,7 +97,7 @@ const PRODUCT_SELECT = `
         from product_serials group by product_id
     ) s on s.product_id = p.id`;
 
-const UNIT_RETURN = 'id, serial, sku, status, cost, price, warranty_months, note, image_url, created_at';
+const UNIT_RETURN = 'id, serial, sku, status, cost, price, warranty_months, warranty_text, note, image_url, created_at';
 
 export async function productRoutes(app: FastifyInstance) {
   const guard = { preHandler: requireAuth() };
@@ -195,9 +198,9 @@ export async function productRoutes(app: FastifyInstance) {
       const product = rows[0];
       for (const u of units) {
         await client.query(
-          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, note, image_url, status)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-          [product.id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url, u.draft ? 'draft' : 'in_stock'],
+          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, warranty_text, note, image_url, status)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [product.id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, u.draft ? 'draft' : 'in_stock'],
         );
       }
       await client.query('commit');
@@ -256,10 +259,10 @@ export async function productRoutes(app: FastifyInstance) {
       const added = [];
       for (const u of units) {
         const { rows } = await client.query(
-          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, note, image_url, status)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, warranty_text, note, image_url, status)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
            returning ${UNIT_RETURN}`,
-          [id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url, u.draft ? 'draft' : 'in_stock'],
+          [id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, u.draft ? 'draft' : 'in_stock'],
         );
         added.push(rows[0]);
       }
@@ -286,9 +289,9 @@ export async function productRoutes(app: FastifyInstance) {
     try {
       const { rows } = await query(
         `update product_serials set serial = $1, sku = $2, cost = $3, price = $4,
-           warranty_months = $5, note = $6, image_url = $7, status = $8 where id = $9
+           warranty_months = $5, warranty_text = $6, note = $7, image_url = $8, status = $9 where id = $10
          returning ${UNIT_RETURN}`,
-        [u.serial, u.sku, u.cost, u.price, u.warranty_months, u.note, u.image_url, u.draft ? 'draft' : 'in_stock', serialId],
+        [u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, u.draft ? 'draft' : 'in_stock', serialId],
       );
       return { serial: rows[0] };
     } catch (err) {

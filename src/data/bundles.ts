@@ -16,6 +16,10 @@ export interface Bundle {
   id: number;
   name: string;
   discount_pct: number;
+  /** 0 = shop warranty (30 days), >0 = months. Overridden by warranty_text when set. */
+  warranty_months: number;
+  /** Free-text warranty (e.g. "15 วัน"); null = use warranty_months. */
+  warranty_text: string | null;
   sold: number;
   items: BundleItem[];
   /** Sum of component list prices. */
@@ -53,6 +57,8 @@ function normBundle(r: Record<string, unknown>): Bundle {
     id: Number(r.id),
     name: r.name as string,
     discount_pct,
+    warranty_months: num(r.warranty_months),
+    warranty_text: (r.warranty_text as string) ?? null,
     sold: num(r.sold),
     items,
     list_price,
@@ -68,12 +74,12 @@ export async function fetchBundles(): Promise<Bundle[]> {
   return bundles.map(normBundle);
 }
 
-export async function createBundle(name: string, discount_pct: number, product_ids: number[]): Promise<void> {
-  await http.post('/api/bundles', { name, discount_pct, product_ids });
+export async function createBundle(name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, product_ids: number[]): Promise<void> {
+  await http.post('/api/bundles', { name, discount_pct, warranty_months, warranty_text, product_ids });
 }
 
-export async function updateBundle(id: number, name: string, discount_pct: number, product_ids: number[]): Promise<void> {
-  await http.put(`/api/bundles/${id}`, { name, discount_pct, product_ids });
+export async function updateBundle(id: number, name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, product_ids: number[]): Promise<void> {
+  await http.put(`/api/bundles/${id}`, { name, discount_pct, warranty_months, warranty_text, product_ids });
 }
 
 export async function deleteBundle(id: number): Promise<void> {

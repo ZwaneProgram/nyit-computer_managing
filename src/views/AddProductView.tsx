@@ -13,7 +13,7 @@ import {
 // AI specs generator — disabled temporarily (re-enable together with the button + genSpecs below)
 // import { generateProductSpecs } from '../data/aiPost';
 import { fetchSettings } from '../data/settings';
-import { WARRANTY_PRESETS, isPresetWarranty } from '../data/warranty';
+import { WARRANTY_PRESETS, isPresetWarranty, resolveWarranty } from '../data/warranty';
 import { ApiError } from '../lib/api';
 import type { ViewId } from '../types';
 
@@ -167,7 +167,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
             sku: u.sku.trim() || null,
             cost: Number(u.cost) || 0,
             price: Number(u.price) || 0,
-            warranty_months: Number(u.warranty) || 0,
+            ...resolveWarranty(u.warranty, u.warrantyCustom),
             note: u.note.trim() || null,
             image_url: u.image_url,
             draft: u.draft,
@@ -336,7 +336,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
                           <option value="custom">อื่นๆ (กำหนดเอง)</option>
                         </select>
                         {u.warrantyCustom && (
-                          <input className="input num" style={{ marginTop: 6 }} type="number" min="0" placeholder="ระบุจำนวนเดือน" value={isPresetWarranty(u.warranty) ? '' : u.warranty} onChange={(e) => setUnit(i, { warranty: e.target.value })} autoFocus />
+                          <input className="input" style={{ marginTop: 6 }} type="text" placeholder="พิมพ์ได้ตามต้องการ เช่น 15 วัน, ประกันตลอดชีพ" value={isPresetWarranty(u.warranty) ? '' : u.warranty} onChange={(e) => setUnit(i, { warranty: e.target.value })} autoFocus />
                         )}
                       </div>
                       <div className="field">
