@@ -10,8 +10,7 @@ import {
   type ProductInput,
 } from '../data/inventory';
 import { ImageManager } from '../components/ImageManager';
-// AI specs generator — disabled temporarily (re-enable together with the button + genSpecs below)
-// import { generateProductSpecs } from '../data/aiPost';
+import { generateProductSpecs } from '../data/aiPost';
 import { fetchSettings } from '../data/settings';
 import { WARRANTY_PRESETS, isPresetWarranty, resolveWarranty } from '../data/warranty';
 import { ApiError } from '../lib/api';
@@ -59,9 +58,9 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
   });
   const [units, setUnits] = useState<UnitDraft[]>([]);
   const [busy, setBusy] = useState(false);
-  // AI specs generator state — disabled temporarily (re-enable with the button + genSpecs)
-  // const [generatingSpecs, setGeneratingSpecs] = useState(false);
-  // const [jibSource, setJibSource] = useState<{ title: string; url: string } | null>(null);
+  // AI specs generator state
+  const [generatingSpecs, setGeneratingSpecs] = useState(false);
+  const [jibSource, setJibSource] = useState<{ title: string; url: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,14 +98,16 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
       .catch(() => setError('โหลดข้อมูลสินค้าไม่สำเร็จ'));
   }, [editId]);
 
-  /* AI specs generator — disabled temporarily (re-enable with the button + state above)
+  // AI specs generator — researches the exact model on the web (MaxPlus) and
+  // fills the spec table. Passes the category SLUG so the backend picks the
+  // right field set (e.g. the rich GPU sheet).
   const genSpecs = async () => {
     setGeneratingSpecs(true);
     setError(null);
     setJibSource(null);
     try {
-      const catName = cats.find((c) => c.id === form.category_id)?.name;
-      const { specs, jib_source } = await generateProductSpecs(form.name, form.model, catName);
+      const catSlug = cats.find((c) => c.id === form.category_id)?.slug;
+      const { specs, jib_source } = await generateProductSpecs(form.name, form.model, catSlug);
       setForm((f) => ({ ...f, specsText: specs.map(([k, v]) => `${k}: ${v}`).join('\n') }));
       if (jib_source) setJibSource(jib_source);
     } catch (err) {
@@ -115,7 +116,6 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
       setGeneratingSpecs(false);
     }
   };
-  */
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -231,17 +231,15 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
             <div className="field" style={{ gridColumn: '1 / -1' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
                 <label className="field-label" style={{ margin: 0 }}>สเปกสินค้า (แสดงเป็นตารางบนหน้าร้าน)</label>
-                {/* ✨ สร้างสเปก AI — disabled temporarily
                 <button
                   type="button"
                   className="btn btn-sm btn-ghost"
                   onClick={genSpecs}
                   disabled={generatingSpecs || (!form.name.trim() && !form.model.trim())}
-                  title="ให้ AI สร้างสเปกจากชื่อและรุ่น"
+                  title="ให้ AI ค้นหาสเปกจริงจากเว็บ (ตามชื่อและรุ่น)"
                 >
-                  {generatingSpecs ? 'กำลังสร้าง...' : '✨ สร้างสเปก AI'}
+                  {generatingSpecs ? 'กำลังค้นหา...' : '🔎 ค้นหาสเปก AI'}
                 </button>
-                */}
               </div>
               <textarea
                 className="textarea mono"
@@ -252,17 +250,15 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
                 style={{ fontSize: 12 }}
               />
               <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>แต่ละบรรทัด: ชื่อสเปก: ค่า — เช่น <code>CUDA® Cores: 21760</code></div>
-              {/* AI specs (JIB source note) — disabled temporarily (re-enable with genSpecs)
               {jibSource && (
                 <div style={{ fontSize: 11, marginTop: 4, color: 'var(--color-warning, #d97706)' }}>
-                  ⚠️ ข้อมูลจาก JIB:{' '}
+                  ⚠️ อ้างอิงจาก JIB:{' '}
                   <a href={jibSource.url} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
                     {jibSource.title}
                   </a>
                   {' '}— ตรวจสอบว่าตรงกับสินค้าที่ต้องการ
                 </div>
               )}
-              */}
             </div>
           </div>
         </div>

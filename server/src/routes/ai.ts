@@ -298,6 +298,67 @@ async function scrapeJib(
   }
 }
 
+// ---------- MaxPlus research (web-search-grounded text) ----------
+// MaxPlus is an OpenAI-compatible proxy (https://api.maxplus-ai.cc). We use its
+// Responses API with the web_search tool so the model actually searches
+// manufacturer + Thai retailer pages before answering — real research, not
+// training-data guesses. Config via env: MAXPLUS_API_KEY, MAXPLUS_BASE_URL,
+// MAXPLUS_TEXT_MODEL (default gpt-5.4).
+const MAXPLUS_BASE = () => (process.env.MAXPLUS_BASE_URL ?? 'https://api.maxplus-ai.cc').replace(/\/+$/, '');
+const MAXPLUS_TEXT_MODEL = () => process.env.MAXPLUS_TEXT_MODEL ?? 'gpt-5.4';
+
+// Pull the assistant's text out of a Responses-API reply (skips reasoning +
+// web_search_call items). Falls back to the SDK-style output_text convenience field.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractResponsesText(data: any): string {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text;
+  const out = data?.output;
+  if (!Array.isArray(out)) return '';
+  let text = '';
+  for (const item of out) {
+    if (item?.type === 'message' && Array.isArray(item.content)) {
+      for (const c of item.content) {
+        if (c?.type === 'output_text' && typeof c.text === 'string') text += c.text;
+      }
+    }
+  }
+  return text;
+}
+
+async function callMaxPlusResearch(instructions: string, userText: string): Promise<string> {
+  // The web_search tool makes latency variable; MaxPlus's gateway occasionally
+  // times out on a slow search. Retry once on a transient timeout/5xx.
+  let lastErr = '';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(`${MAXPLUS_BASE()}/v1/responses`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.MAXPLUS_API_KEY ?? ''}`,
+      },
+      body: JSON.stringify({
+        model: MAXPLUS_TEXT_MODEL(),
+        instructions,
+        input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: userText }] }],
+        tools: [{ type: 'web_search' }],
+        stream: false,
+        store: false,
+        reasoning: { effort: 'low' },
+        max_output_tokens: 2000,
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (res.ok) return extractResponsesText(await res.json());
+
+    const err = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    lastErr = ((err.error as Record<string, unknown> | undefined)?.message as string) ?? `HTTP ${res.status}`;
+    // Only retry transient failures (gateway timeout / overloaded).
+    const transient = res.status >= 500 || /too long|timeout|overloaded|unavailable/i.test(lastErr);
+    if (!transient) break;
+  }
+  throw new Error(`MaxPlus: ${lastErr}`);
+}
+
 export async function aiRoutes(app: FastifyInstance) {
   // POST /api/ai/generate-product-description — generate a Thai product description
   // from the product name + model number using Gemini.
@@ -331,13 +392,14 @@ export async function aiRoutes(app: FastifyInstance) {
     }
   });
 
-  // POST /api/ai/generate-product-specs — generate a structured spec sheet as a
-  // JSON array of [key, value] pairs from the product name + model number.
-  // Uses plain callGemini (no Search grounding) with category-specific fields
-  // to keep the response focused and avoid billing/quota issues.
+  // POST /api/ai/generate-product-specs — research a product's real spec sheet.
+  // Uses MaxPlus (web-search-grounded) so the model actually looks up the exact
+  // model on manufacturer + Thai retailer pages. Returns a JSON array of
+  // [label, value] pairs using category-specific fields. Also scrapes JIB as
+  // an extra hint the model can cross-check.
   app.post('/api/ai/generate-product-specs', { preHandler: requireAuth() }, async (req, reply) => {
-    if (!process.env.GEMINI_API_KEY) {
-      return reply.code(503).send({ error: 'ยังไม่ได้ตั้งค่า GEMINI_API_KEY' });
+    if (!process.env.MAXPLUS_API_KEY) {
+      return reply.code(503).send({ error: 'ยังไม่ได้ตั้งค่า MAXPLUS_API_KEY ใน server/.env' });
     }
     const b = (req.body ?? {}) as { name?: string; model?: string; category?: string };
     const name = b.name?.trim() || '';
@@ -345,7 +407,8 @@ export async function aiRoutes(app: FastifyInstance) {
     if (!name && !model) return reply.code(400).send({ error: 'กรุณาระบุชื่อสินค้าหรือรุ่น' });
 
     const CATEGORY_FIELDS: Record<string, string[]> = {
-      gpu:        ['GPU Model', 'Memory Size', 'Memory Type', 'HDMI Port', 'Display Port', 'Power Connector', 'Power Requirement'],
+      // GPU — rich spec sheet matching a retailer table (POWER COLOR / GIGABYTE style).
+      gpu:        ['Brand', 'GPU Series', 'GPU Model', 'Memory Size', 'Bus Standard', 'CUDA Cores / Stream Processors', 'Boost Clock', 'Memory Clock', 'Max Digital Resolution', 'HDMI Port', 'Display Port', 'Power Connector', 'Power Requirement'],
       cpu:        ['Socket', 'Cores / Threads', 'Base Clock', 'Boost Clock', 'Cache', 'TDP'],
       ram:        ['Capacity', 'Speed', 'Type', 'Form Factor', 'Latency (CL)'],
       ssd:        ['Capacity', 'Interface', 'Form Factor', 'Read Speed', 'Write Speed'],
@@ -361,31 +424,13 @@ export async function aiRoutes(app: FastifyInstance) {
     const fields = CATEGORY_FIELDS[slug] ?? ['Model', 'Key Specification 1', 'Key Specification 2', 'Key Specification 3'];
     const fieldList = fields.map((f) => `    ["${f}", "..."]`).join(',\n');
 
-    // Scrape JIB first; if it returns a result use that as the source, otherwise
-    // fall back to Gemini's own training knowledge (still no Search grounding).
-    const jib = await scrapeJib(name, model);
+    const instructions = `You are a computer hardware specification researcher with web search.
+ALWAYS search the web first — check the manufacturer's official product page and Thai retailers (JIB, Advice, Banana IT, Nyit) to find the exact specs for the SPECIFIC product model requested.
+Only report values you can verify from search results. NEVER invent or guess a value — omit a field instead.
+For the core-count field, use the correct term for the brand: "CUDA Cores" for NVIDIA, "Stream Processors" for AMD Radeon.`;
 
-    const prompt = jib
-      ? `You are a computer hardware expert extracting specs from a product page.
-Product: "${name}"${model ? ` (${model})` : ''}
-
-Here is the raw text content scraped from JIB.co.th product page:
----
-${jib.text}
----
-
-Extract ONLY the fields below from the text above. If a field is not found in the text, omit it.
-Return ONLY a JSON object — no markdown, no explanation:
-{
-  "specs": [
-${fieldList}
-  ]
-}`
-      : `You are a computer hardware expert.
-Product: "${name}"${model ? ` (${model})` : ''}${b.category ? ` — Category: ${b.category}` : ''}
-
-Return ONLY the fields below based on your training knowledge. Omit any field you are not confident about.
-Return ONLY a JSON object — no markdown, no explanation:
+    const userText = `Product: "${name}"${model ? ` — model "${model}"` : ''}${b.category ? ` (category: ${b.category})` : ''}.
+Research this exact product and return ONLY a JSON object (no markdown, no commentary) with a "specs" array of [label, value] pairs, using these fields. Omit any field you cannot verify:
 {
   "specs": [
 ${fieldList}
@@ -393,16 +438,15 @@ ${fieldList}
 }`;
 
     try {
-      const raw = await callGemini(prompt);
+      const raw = await callMaxPlusResearch(instructions, userText);
       const data = parseJson(raw);
       const specs = data?.specs;
       if (!Array.isArray(specs) || !specs.length) {
-        return reply.code(502).send({ error: 'AI ไม่สามารถสร้างสเปกได้' });
+        return reply.code(502).send({ error: 'AI ไม่สามารถสร้างสเปกได้ (ลองใหม่อีกครั้ง)' });
       }
-      const jib_source = jib ? { title: jib.title, url: jib.url } : undefined;
-      return { specs, jib_source };
+      return { specs };
     } catch (err) {
-      return reply.code(502).send({ error: friendlyAiError(err) });
+      return reply.code(502).send({ error: (err as Error).message || 'สร้างสเปกไม่สำเร็จ' });
     }
   });
 
