@@ -755,3 +755,16 @@ input, select, textarea { font-family: inherit; }
 .imgman-row .icon { width: 15px; height: 15px; }
 .imgman-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .btn.is-disabled { opacity: 0.5; pointer-events: none; }
+
+/* Labeled date-range filter (Inventory) — an empty native date input is just a
+   blank box on mobile, so pair each one with a visible "from / to" label. */
+.date-filter {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--ink-3); white-space: nowrap;
+}
+.date-filter > span { flex-shrink: 0; }
+.date-filter input[type="date"] { width: auto; min-width: 138px; }
+@media (max-width: 600px) {
+  .date-filter { flex: 1 1 44%; }
+  .date-filter input[type="date"] { min-width: 0; width: 100%; }
+}

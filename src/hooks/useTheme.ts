@@ -20,15 +20,10 @@ export const ACCENT_SWATCHES = Object.keys(ACCENT_MAP);
 
 const STORAGE_KEY = 'nyit.theme';
 
-function prefersDark(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-color-scheme: dark)').matches
-  );
-}
-
 function load(): ThemeState {
-  const fallback: ThemeState = { dark: prefersDark(), accent: '#5A6CDB', density: 'regular' };
+  // Default to light/white regardless of the OS preference; a user's toggle is
+  // remembered in localStorage and still wins on later visits.
+  const fallback: ThemeState = { dark: false, accent: '#5A6CDB', density: 'regular' };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
