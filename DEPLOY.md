@@ -78,6 +78,12 @@ JWT_SECRET=$JWT
 COOKIE_SECRET=$COOKIE
 PORT=3000
 COOKIE_SECURE=false
+# AI features — optional
+GEMINI_API_KEY=your-gemini-key-here
+# Image generation via MaxPlus (required for "สร้างรูปภาพ AI" button)
+IMAGE_API_KEY=ccsk-your-maxplus-key-here
+IMAGE_API_BASE_URL=https://api.maxplus-ai.cc
+# OPENAI_IMAGE_MODEL defaults to gpt-image-2 — change only if needed
 EOF
 chmod 600 .env
 ```

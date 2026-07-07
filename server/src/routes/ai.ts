@@ -1,7 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { writeFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
 import { query } from '../db';
 import { requireAuth } from '../auth';
+
+const AI_IMAGE_DIR = fileURLToPath(new URL('../../../uploads/ai-images', import.meta.url));
 
 // AI sales-post generator. The user picks real item(s) from the database; we
 // pull the authoritative data here (names/models/prices/warranty never come
@@ -439,6 +445,99 @@ ${fieldList}
     }
   });
 
+  // POST /api/ai/generate-product-image — create a promotional ad image using
+  // gpt-image-1. Pulls product data from DB, builds a category-specific prompt
+  // matching the N.Y. ITSHOP house style, saves the result to uploads/ai-images/,
+  // and returns the URL. Requires OPENAI_API_KEY in server/.env.
+  app.post('/api/ai/generate-product-image', { preHandler: requireAuth() }, async (req, reply) => {
+    if (!process.env.IMAGE_API_KEY && !process.env.OPENAI_API_KEY) {
+      return reply.code(503).send({ error: 'ยังไม่ได้ตั้งค่า IMAGE_API_KEY ใน server/.env' });
+    }
+
+    const b = (req.body ?? {}) as { productId?: number; serialId?: number };
+    let name = '', model = '', categorySlug = '', price = 0;
+
+    if (b.serialId) {
+      const { rows } = await query(
+        `select ps.price, p.name, p.model, c.slug as category_slug
+           from product_serials ps
+           join products p on p.id = ps.product_id
+           left join categories c on c.id = p.category_id
+          where ps.id = $1`,
+        [b.serialId],
+      );
+      if (!rows[0]) return reply.code(404).send({ error: 'ไม่พบหน่วยสินค้านี้' });
+      const r = rows[0] as Record<string, unknown>;
+      name = r.name as string;
+      model = (r.model as string) ?? '';
+      categorySlug = (r.category_slug as string) ?? '';
+      price = num(r.price);
+    } else if (b.productId) {
+      const [c] = await fetchComponents([b.productId]);
+      if (!c) return reply.code(404).send({ error: 'ไม่พบสินค้านี้' });
+      name = c.name;
+      model = c.model ?? '';
+      categorySlug = c.category_slug ?? '';
+      price = c.price;
+    } else {
+      return reply.code(400).send({ error: 'กรุณาเลือกสินค้า' });
+    }
+
+    const prompt = buildImagePrompt({ name, model, categorySlug, price });
+
+    try {
+      const imgApiKey = process.env.IMAGE_API_KEY ?? process.env.OPENAI_API_KEY ?? '';
+      const imgBaseUrl = (process.env.IMAGE_API_BASE_URL ?? 'https://api.openai.com').replace(/\/+$/, '');
+      const imgModel = process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2';
+
+      const oaRes = await fetch(`${imgBaseUrl}/v1/images/generations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${imgApiKey}`,
+        },
+        body: JSON.stringify({
+          model: imgModel,
+          prompt,
+          n: 1,
+          size: '1024x1024',
+          quality: 'high',
+        }),
+        signal: AbortSignal.timeout(120_000),
+      });
+
+      if (!oaRes.ok) {
+        const errData = (await oaRes.json().catch(() => ({}))) as Record<string, unknown>;
+        const msg = ((errData.error as Record<string, unknown> | undefined)?.message as string) ?? `HTTP ${oaRes.status}`;
+        return reply.code(502).send({ error: `Image API: ${msg}` });
+      }
+
+      const oaData = (await oaRes.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
+      const item = oaData.data?.[0];
+      if (!item) return reply.code(502).send({ error: 'AI ไม่สร้างรูปภาพ' });
+
+      // Save to disk and return a /uploads URL.
+      await mkdir(AI_IMAGE_DIR, { recursive: true });
+      const filename = `ai-${Date.now()}-${randomBytes(4).toString('hex')}.png`;
+      const dest = join(AI_IMAGE_DIR, filename);
+
+      if (item.b64_json) {
+        await writeFile(dest, Buffer.from(item.b64_json, 'base64'));
+      } else if (item.url) {
+        const imgRes = await fetch(item.url, { signal: AbortSignal.timeout(30_000) });
+        const buf = Buffer.from(await imgRes.arrayBuffer());
+        await writeFile(dest, buf);
+      } else {
+        return reply.code(502).send({ error: 'ไม่ได้รับข้อมูลรูปภาพจาก AI' });
+      }
+
+      return { imageUrl: `/uploads/ai-images/${filename}`, prompt };
+    } catch (err) {
+      app.log.error(err);
+      return reply.code(502).send({ error: (err as Error).message || 'สร้างรูปภาพไม่สำเร็จ' });
+    }
+  });
+
   app.post('/api/ai/generate-post', { preHandler: requireAuth() }, async (req, reply) => {
     if (!process.env.GEMINI_API_KEY) {
       return reply
@@ -648,4 +747,52 @@ ${!hasGpu ? 'หมายเหตุ: เครื่องนี้ยัง�
   const footer = buildFooter(settings, true);
   if (footer) parts.push(footer);
   return { text: parts.join('\n\n') };
+}
+
+// ---------- image generation ----------
+interface CategoryTheme {
+  color: string;
+  atmosphere: string;
+  productType: string;
+  typeLabel: string;
+}
+
+const CATEGORY_IMAGE_THEME: Record<string, CategoryTheme> = {
+  monitor:    { color: 'neon green', atmosphere: 'bright green neon laser beams and green fog emanating from both sides, dark gaming room floor with green reflections', productType: 'gaming monitor with ultra-thin bezels on a sleek adjustable stand', typeLabel: 'GAMING MONITOR' },
+  gpu:        { color: 'purple and violet', atmosphere: 'purple and violet neon light beams and glowing mist, dark tech atmosphere with subtle circuit-board patterns on the floor', productType: 'graphics card with cooling fans and RGB lighting', typeLabel: 'GRAPHICS CARD' },
+  cpu:        { color: 'electric blue and cyan', atmosphere: 'blue neon light rays and cyan digital data-stream particle effects, glowing circuit traces on dark floor', productType: 'CPU processor chip with metallic heat spreader', typeLabel: 'PROCESSOR' },
+  ram:        { color: 'blue and cyan', atmosphere: 'blue and cyan RGB light glow and particle bokeh effects', productType: 'RAM memory module sticks with RGB lighting', typeLabel: 'GAMING RAM' },
+  ssd:        { color: 'blue and teal', atmosphere: 'cool blue data-stream light effects and teal particles', productType: 'M.2 NVMe SSD storage card', typeLabel: 'NVMe SSD' },
+  mb:         { color: 'blue and green', atmosphere: 'blue-green circuit-board glow and trace lighting patterns', productType: 'computer motherboard PCB with slots and heatsinks', typeLabel: 'MOTHERBOARD' },
+  psu:        { color: 'orange and gold', atmosphere: 'warm amber and gold power glow with energy rays', productType: 'modular power supply unit', typeLabel: 'POWER SUPPLY' },
+  cooler:     { color: 'ice blue and white', atmosphere: 'cold mist, ice crystals, and ice-blue light rays', productType: 'CPU cooler with large fans and heatsink fins', typeLabel: 'CPU COOLER' },
+  case:       { color: 'white and silver', atmosphere: 'clean bright studio lighting with soft shadows', productType: 'ATX computer case with tempered glass side panel', typeLabel: 'PC CASE' },
+  peripheral: { color: 'RGB rainbow', atmosphere: 'colorful RGB rainbow glow with multi-color light rays', productType: 'gaming peripheral accessory', typeLabel: 'GAMING PERIPHERAL' },
+};
+
+const DEFAULT_THEME: CategoryTheme = {
+  color: 'blue and white',
+  atmosphere: 'dramatic blue neon light rays and tech glow',
+  productType: 'computer hardware component',
+  typeLabel: 'COMPUTER HARDWARE',
+};
+
+function buildImagePrompt(p: { name: string; model: string; categorySlug: string; price: number }): string {
+  const theme = CATEGORY_IMAGE_THEME[p.categorySlug] ?? DEFAULT_THEME;
+  const brand = p.name.toUpperCase();
+  const model = p.model.toUpperCase();
+  const priceStr = Math.round(p.price).toLocaleString('en-US');
+  const hasPrice = p.price > 0;
+
+  return `A professional square (1:1) product advertisement image for a Thai IT shop.
+
+EXACT VISUAL LAYOUT:
+- Background: Pure black background filled with ${theme.atmosphere}. The dark reflective floor subtly mirrors the product and colored light.
+- Top-left corner: A small dark rectangular logo badge. Inside: "N.Y." in large bold white text on the top line, "ITSHOP" in smaller bold white text directly below. The badge has a thin ${theme.color} glowing border.
+- Top-right text area: "${brand}" in bold white text (medium size), directly below it "${model}" in very large bold white or ${theme.color} text. Both are prominent readable headlines with no blur.
+- Below the model name: "${theme.typeLabel}" in smaller ${theme.color} text, serving as a product-category label.
+- Center of image: A photorealistic, high-detail product photo of ${theme.productType} named "${p.name} ${p.model}". The product floats slightly above the reflective floor and is dramatically lit from below and from the sides with ${theme.color} light, creating an epic hero-shot appearance.
+${hasPrice ? `- Bottom-right corner: A dark rectangular price tag badge with "${priceStr}.-" in large bold white numbers. The badge has a ${theme.color} glowing border.` : ''}
+
+Overall style: Ultra-high-quality professional gaming hardware advertisement. Cinematic dramatic product photography. Similar to Samsung Odyssey gaming monitor or Intel CPU promotional marketing images. The text must be perfectly legible with no typos.`;
 }

@@ -55,6 +55,16 @@ export async function generateProductSpecs(
   );
 }
 
+export async function generateProductImage(
+  productId: number,
+  serialId?: number,
+): Promise<{ imageUrl: string; prompt: string }> {
+  return http.post<{ imageUrl: string; prompt: string }>(
+    '/api/ai/generate-product-image',
+    { productId, serialId },
+  );
+}
+
 // Tidy a post for display/copy: normalise escaped newlines and collapse runs of
 // blank lines. (Ported from the standalone generator's lib/formatPost.)
 export function formatPost(text: string): string {

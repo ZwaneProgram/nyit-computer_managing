@@ -11,7 +11,7 @@ import {
 } from '../data/inventory';
 import { fetchBundles, type Bundle } from '../data/bundles';
 import { useUnitMatches } from '../hooks/useUnitMatches';
-import { generatePost, formatPost, postToFacebook } from '../data/aiPost';
+import { generatePost, formatPost, postToFacebook, generateProductImage } from '../data/aiPost';
 
 interface ViewProps {
   showToast: (msg: string) => void;
@@ -43,6 +43,10 @@ export function GeneratePostView({ showToast }: ViewProps) {
   const [post, setPost] = useState('');
   const [showEdit, setShowEdit] = useState(false);
   const [posting, setPosting] = useState(false);
+
+  // image generation
+  const [generatingImage, setGeneratingImage] = useState(false);
+  const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
 
   const fail = (err: unknown, fallback: string) =>
     showToast(err instanceof ApiError ? err.message : fallback);
@@ -83,12 +87,12 @@ export function GeneratePostView({ showToast }: ViewProps) {
     );
   }, [products, search, unitMatches]);
 
-  // Load a single product's units so the user can pick a specific one.
-  // If the product was surfaced by a serial/SKU search, pre-select that unit.
+  // Reset generated image when product selection changes.
   const selectSingle = useCallback(async (id: number) => {
     setSingleId(id);
     setSerialId(null);
     setSerials([]);
+    setGeneratedImageUrl(null);
     try {
       const { serials: s } = await fetchProduct(id);
       const inStock = s.filter((u) => u.status === 'in_stock');
@@ -149,6 +153,20 @@ export function GeneratePostView({ showToast }: ViewProps) {
       fail(err, 'สร้างโพสต์ไม่สำเร็จ');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const generateImage = async () => {
+    if (!singleId) return;
+    setGeneratingImage(true);
+    setGeneratedImageUrl(null);
+    try {
+      const { imageUrl } = await generateProductImage(singleId, serialId ?? undefined);
+      setGeneratedImageUrl(imageUrl);
+    } catch (err) {
+      fail(err, 'สร้างรูปภาพไม่สำเร็จ');
+    } finally {
+      setGeneratingImage(false);
     }
   };
 
@@ -225,14 +243,61 @@ export function GeneratePostView({ showToast }: ViewProps) {
             />
           )}
 
-          <div style={{ marginTop: 16 }}>
+          <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn btn-primary" onClick={generate} disabled={!canGenerate || generating}>
               {generating ? <>กำลังสร้างโพสต์...</> : <>✨ สร้างโพสต์ขาย</>}
             </button>
+            {mode === 'single' && (
+              <button
+                className="btn btn-ghost"
+                onClick={generateImage}
+                disabled={!singleId || generatingImage}
+                title="สร้างรูปโฆษณาสินค้าด้วย AI (ต้องตั้งค่า OPENAI_API_KEY)"
+              >
+                {generatingImage ? <>กำลังสร้างรูป...</> : <>🎨 สร้างรูปภาพ AI</>}
+              </button>
+            )}
           </div>
         </div>
 
         {/* ---- right: result ---- */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
+        {/* generated image */}
+        {(generatedImageUrl || generatingImage) && (
+          <div className="card card-pad">
+            <h3 style={{ marginBottom: 12 }}>รูปภาพโฆษณา AI</h3>
+            {generatingImage ? (
+              <div className="muted" style={{ padding: '28px 8px', textAlign: 'center' }}>
+                AI กำลังวาดรูป... (อาจใช้เวลา 15–60 วิ)
+              </div>
+            ) : generatedImageUrl ? (
+              <div>
+                <img
+                  src={generatedImageUrl}
+                  alt="AI generated product image"
+                  style={{ width: '100%', borderRadius: 8, display: 'block' }}
+                />
+                <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <a
+                    href={generatedImageUrl}
+                    download
+                    className="btn btn-primary"
+                  >
+                    ⬇ ดาวน์โหลดรูป
+                  </a>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={generateImage}
+                    disabled={generatingImage}
+                  >
+                    <Icons.refresh /> สร้างใหม่
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+
         <div className="card card-pad">
           <div className="section-h" style={{ alignItems: 'center' }}>
             <div><h3>ตัวอย่างโพสต์</h3></div>
@@ -287,6 +352,7 @@ export function GeneratePostView({ showToast }: ViewProps) {
               </button>
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>
