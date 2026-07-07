@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { query } from '../db';
 import { requireAuth } from '../auth';
 
-const AI_IMAGE_DIR = fileURLToPath(new URL('../../../uploads/ai-images', import.meta.url));
+const AI_IMAGE_DIR = fileURLToPath(new URL('../../uploads/ai-images', import.meta.url));
 
 // AI sales-post generator. The user picks real item(s) from the database; we
 // pull the authoritative data here (names/models/prices/warranty never come
