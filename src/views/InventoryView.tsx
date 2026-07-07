@@ -10,13 +10,13 @@ import {
   fetchProduct,
   fetchProducts,
   updateSerial,
-  uploadImage,
   type Category,
   type Product,
   type ProductStatus,
   type Serial,
   type UnitInput,
 } from '../data/inventory';
+import { ImageManager } from '../components/ImageManager';
 import { WARRANTY_PRESETS, isPresetWarranty, warrantyDisplay, resolveWarranty } from '../data/warranty';
 import { useUnitMatches } from '../hooks/useUnitMatches';
 import { ApiError } from '../lib/api';
@@ -274,9 +274,9 @@ interface DetailProps {
 }
 
 /** Blank unit form values. */
-const blankUnit = (): UnitFormState => ({ serial: '', sku: '', cost: '', price: '', warranty: '36', warrantyCustom: false, note: '', image_url: null, draft: false });
+const blankUnit = (): UnitFormState => ({ serial: '', sku: '', cost: '', price: '', warranty: '36', warrantyCustom: false, note: '', cover: null, images: [], draft: false });
 interface UnitFormState {
-  serial: string; sku: string; cost: string; price: string; warranty: string; warrantyCustom: boolean; note: string; image_url: string | null; draft: boolean;
+  serial: string; sku: string; cost: string; price: string; warranty: string; warrantyCustom: boolean; note: string; cover: string | null; images: string[]; draft: boolean;
 }
 const toUnitInput = (u: UnitFormState): UnitInput => ({
   serial: u.serial.trim(),
@@ -285,7 +285,8 @@ const toUnitInput = (u: UnitFormState): UnitInput => ({
   price: Number(u.price) || 0,
   ...resolveWarranty(u.warranty, u.warrantyCustom),
   note: u.note.trim() || null,
-  image_url: u.image_url,
+  image_url: u.cover,
+  images: u.images,
   draft: u.draft,
 });
 
@@ -339,7 +340,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
       price: s.price ? String(s.price) : '',
       warranty: s.warranty_text ?? String(s.warranty_months),
       warrantyCustom: !!s.warranty_text || !isPresetWarranty(String(s.warranty_months)),
-      note: s.note ?? '', image_url: s.image_url, draft: s.status === 'draft',
+      note: s.note ?? '', cover: s.image_url, images: s.images, draft: s.status === 'draft',
     });
   };
 
@@ -451,7 +452,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                   {serials.map((s) => (
                     editId === s.id ? (
                       <tr key={s.id}>
-                        <td colSpan={7} style={{ padding: 14 }}>
+                        <td colSpan={7} className="edit-cell" style={{ padding: 14 }}>
                           <UnitFields value={editForm} onChange={setEditForm} onUploadError={showToast} />
                           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                             <button className="btn btn-primary btn-sm" disabled={busy} onClick={saveEdit}><Icons.check /> บันทึก</button>
@@ -521,11 +522,6 @@ function UnitFields({ value, onChange, onUploadError }: {
   onUploadError: (msg: string) => void;
 }) {
   const set = (patch: Partial<UnitFormState>) => onChange({ ...value, ...patch });
-  const onPick = async (file: File | undefined) => {
-    if (!file) return;
-    try { set({ image_url: await uploadImage(file) }); }
-    catch (err) { onUploadError(err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ'); }
-  };
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[14px]">
       <div className="field">
@@ -563,19 +559,13 @@ function UnitFields({ value, onChange, onUploadError }: {
         <div className="input-prefix"><span className="pfx">฿</span>
           <input className="input num" type="number" placeholder="0" value={value.price} onChange={(e) => set({ price: e.target.value })} /></div>
       </div>
-      <div className="field">
-        <label className="field-label">รูปของเครื่องนี้</label>
-        {value.image_url ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <img src={value.image_url} alt="" style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 'var(--r-md)', background: 'var(--surface)' }} />
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => set({ image_url: null })}><Icons.trash /></button>
-          </div>
-        ) : (
-          <label className="btn btn-sm" style={{ cursor: 'pointer', width: 'fit-content' }}>
-            <Icons.upload style={{ width: 14, height: 14 }} /> เลือกรูป
-            <input type="file" accept="image/*" hidden onChange={(e) => onPick(e.target.files?.[0])} />
-          </label>
-        )}
+      <div className="field" style={{ gridColumn: '1 / -1' }}>
+        <label className="field-label">รูปของเครื่องนี้ (ใส่ได้หลายรูป · เลือกรูปปกได้)</label>
+        <ImageManager
+          value={{ images: value.images, cover: value.cover }}
+          onChange={(g) => set({ images: g.images, cover: g.cover })}
+          onError={onUploadError}
+        />
       </div>
       <div className="field" style={{ gridColumn: '1 / -1' }}>
         <label className="field-label">โน้ต  </label>

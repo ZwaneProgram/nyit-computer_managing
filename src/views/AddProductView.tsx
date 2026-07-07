@@ -6,10 +6,10 @@ import {
   fetchCategories,
   fetchProduct,
   updateProduct,
-  uploadImage,
   type Category,
   type ProductInput,
 } from '../data/inventory';
+import { ImageManager } from '../components/ImageManager';
 // AI specs generator — disabled temporarily (re-enable together with the button + genSpecs below)
 // import { generateProductSpecs } from '../data/aiPost';
 import { fetchSettings } from '../data/settings';
@@ -33,7 +33,8 @@ interface UnitDraft {
   warranty: string;
   warrantyCustom: boolean;
   note: string;
-  image_url: string | null;
+  cover: string | null;
+  images: string[];
   draft: boolean;
 }
 const emptyUnit = (from?: UnitDraft): UnitDraft => ({
@@ -44,7 +45,8 @@ const emptyUnit = (from?: UnitDraft): UnitDraft => ({
   warranty: from?.warranty ?? '36',
   warrantyCustom: from?.warrantyCustom ?? false,
   note: '',
-  image_url: null,
+  cover: null,
+  images: [],
   draft: false,
 });
 
@@ -123,16 +125,6 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
   const addUnitRow = () => setUnits((arr) => [...arr, emptyUnit(arr[arr.length - 1])]);
   const removeUnitRow = (i: number) => setUnits((arr) => arr.filter((_, idx) => idx !== i));
 
-  const onPickImage = async (i: number, file: File | undefined) => {
-    if (!file) return;
-    setError(null);
-    try {
-      setUnit(i, { image_url: await uploadImage(file) });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ');
-    }
-  };
-
   const save = async () => {
     setError(null);
     if (!form.name.trim()) return setError('กรุณากรอกชื่อสินค้า');
@@ -169,7 +161,8 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
             price: Number(u.price) || 0,
             ...resolveWarranty(u.warranty, u.warrantyCustom),
             note: u.note.trim() || null,
-            image_url: u.image_url,
+            image_url: u.cover,
+            images: u.images,
             draft: u.draft,
           })),
       }),
@@ -364,18 +357,12 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
                         </label>
                       </div>
                       <div className="field" style={{ gridColumn: '1 / -1' }}>
-                        <label className="field-label">รูปของเครื่องนี้</label>
-                        {u.image_url ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <img src={u.image_url} alt="" style={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 'var(--r-md)', background: 'var(--surface)' }} />
-                            <button type="button" className="btn btn-sm" onClick={() => setUnit(i, { image_url: null })}><Icons.trash /> ลบรูป</button>
-                          </div>
-                        ) : (
-                          <label className="btn btn-sm" style={{ cursor: 'pointer', width: 'fit-content' }}>
-                            <Icons.upload style={{ width: 14, height: 14 }} /> เลือกรูป
-                            <input type="file" accept="image/*" hidden onChange={(e) => onPickImage(i, e.target.files?.[0])} />
-                          </label>
-                        )}
+                        <label className="field-label">รูปของเครื่องนี้ (ใส่ได้หลายรูป · เลือกรูปปกได้)</label>
+                        <ImageManager
+                          value={{ images: u.images, cover: u.cover }}
+                          onChange={(g) => setUnit(i, { images: g.images, cover: g.cover })}
+                          onError={(msg) => setError(msg)}
+                        />
                       </div>
                     </div>
                   </div>

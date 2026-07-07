@@ -12,6 +12,7 @@ interface UnitInput {
   warranty_text?: string | null;
   note?: string | null;
   image_url?: string | null;
+  images?: unknown;
   draft?: boolean;
 }
 
@@ -39,7 +40,29 @@ interface CleanUnit {
   warranty_text: string | null;
   note: string | null;
   image_url: string | null;
+  images: string[];
   draft: boolean;
+}
+
+/** Ordered, de-duped list of image URLs (strings), capped. */
+function cleanImages(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of input) {
+    const s = typeof raw === 'string' ? raw.trim() : '';
+    if (s && !seen.has(s)) { seen.add(s); out.push(s); }
+  }
+  return out.slice(0, 12);
+}
+
+/** Reconcile the gallery with the chosen cover: cover must be one of `images`. */
+function galleryFor(u: UnitInput): { images: string[]; cover: string | null } {
+  let images = cleanImages(u.images);
+  let cover = typeof u.image_url === 'string' && u.image_url.trim() ? u.image_url.trim() : null;
+  if (cover && !images.includes(cover)) images = [cover, ...images];
+  if (!cover) cover = images[0] ?? null;
+  return { images, cover };
 }
 
 /** Clean a unit list: trim serials, drop blank-serial rows, de-dupe by serial. */
@@ -54,6 +77,7 @@ function cleanUnits(input: unknown): CleanUnit[] {
     const key = serial.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
+    const { images, cover } = galleryFor(u);
     out.push({
       serial,
       sku: u.sku?.toString().trim() || null,
@@ -62,7 +86,8 @@ function cleanUnits(input: unknown): CleanUnit[] {
       warranty_months: Number(u.warranty_months) || 0,
       warranty_text: u.warranty_text?.toString().trim() || null,
       note: u.note?.toString().trim() || null,
-      image_url: u.image_url ?? null,
+      image_url: cover,
+      images,
       draft: u.draft === true,
     });
   }
@@ -97,7 +122,7 @@ const PRODUCT_SELECT = `
         from product_serials group by product_id
     ) s on s.product_id = p.id`;
 
-const UNIT_RETURN = 'id, serial, sku, status, cost, price, warranty_months, warranty_text, note, image_url, created_at';
+const UNIT_RETURN = 'id, serial, sku, status, cost, price, warranty_months, warranty_text, note, image_url, images, created_at';
 
 export async function productRoutes(app: FastifyInstance) {
   const guard = { preHandler: requireAuth() };
@@ -198,9 +223,9 @@ export async function productRoutes(app: FastifyInstance) {
       const product = rows[0];
       for (const u of units) {
         await client.query(
-          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, warranty_text, note, image_url, status)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-          [product.id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, u.draft ? 'draft' : 'in_stock'],
+          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, warranty_text, note, image_url, images, status)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)`,
+          [product.id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, JSON.stringify(u.images), u.draft ? 'draft' : 'in_stock'],
         );
       }
       await client.query('commit');
@@ -259,10 +284,10 @@ export async function productRoutes(app: FastifyInstance) {
       const added = [];
       for (const u of units) {
         const { rows } = await client.query(
-          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, warranty_text, note, image_url, status)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, warranty_text, note, image_url, images, status)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
            returning ${UNIT_RETURN}`,
-          [id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, u.draft ? 'draft' : 'in_stock'],
+          [id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, JSON.stringify(u.images), u.draft ? 'draft' : 'in_stock'],
         );
         added.push(rows[0]);
       }
@@ -289,9 +314,9 @@ export async function productRoutes(app: FastifyInstance) {
     try {
       const { rows } = await query(
         `update product_serials set serial = $1, sku = $2, cost = $3, price = $4,
-           warranty_months = $5, warranty_text = $6, note = $7, image_url = $8, status = $9 where id = $10
+           warranty_months = $5, warranty_text = $6, note = $7, image_url = $8, images = $9::jsonb, status = $10 where id = $11
          returning ${UNIT_RETURN}`,
-        [u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, u.draft ? 'draft' : 'in_stock', serialId],
+        [u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, JSON.stringify(u.images), u.draft ? 'draft' : 'in_stock', serialId],
       );
       return { serial: rows[0] };
     } catch (err) {

@@ -20,6 +20,10 @@ export interface Bundle {
   warranty_months: number;
   /** Free-text warranty (e.g. "15 วัน"); null = use warranty_months. */
   warranty_text: string | null;
+  /** The bundle's own ordered image gallery (independent of component photos). */
+  images: string[];
+  /** The bundle's chosen cover (one of `images`); null → fall back to components. */
+  image_url: string | null;
   sold: number;
   items: BundleItem[];
   /** Sum of component list prices. */
@@ -59,6 +63,8 @@ function normBundle(r: Record<string, unknown>): Bundle {
     discount_pct,
     warranty_months: num(r.warranty_months),
     warranty_text: (r.warranty_text as string) ?? null,
+    images: Array.isArray(r.images) ? (r.images as string[]) : [],
+    image_url: (r.image_url as string) ?? null,
     sold: num(r.sold),
     items,
     list_price,
@@ -74,12 +80,17 @@ export async function fetchBundles(): Promise<Bundle[]> {
   return bundles.map(normBundle);
 }
 
-export async function createBundle(name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, product_ids: number[]): Promise<void> {
-  await http.post('/api/bundles', { name, discount_pct, warranty_months, warranty_text, product_ids });
+export interface BundleImages {
+  images: string[];
+  image_url: string | null;
 }
 
-export async function updateBundle(id: number, name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, product_ids: number[]): Promise<void> {
-  await http.put(`/api/bundles/${id}`, { name, discount_pct, warranty_months, warranty_text, product_ids });
+export async function createBundle(name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, product_ids: number[], gallery: BundleImages): Promise<void> {
+  await http.post('/api/bundles', { name, discount_pct, warranty_months, warranty_text, product_ids, ...gallery });
+}
+
+export async function updateBundle(id: number, name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, product_ids: number[], gallery: BundleImages): Promise<void> {
+  await http.put(`/api/bundles/${id}`, { name, discount_pct, warranty_months, warranty_text, product_ids, ...gallery });
 }
 
 export async function deleteBundle(id: number): Promise<void> {

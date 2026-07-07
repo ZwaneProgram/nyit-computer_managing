@@ -23,7 +23,10 @@ export interface Serial {
   warranty_months: number;
   warranty_text: string | null;
   note: string | null;
+  /** Chosen cover/thumbnail — one of `images` (or null when empty). */
   image_url: string | null;
+  /** Ordered image gallery. */
+  images: string[];
   sale_id: number | null;
   created_at: string;
 }
@@ -67,7 +70,10 @@ export interface UnitInput {
   warranty_months: number;
   warranty_text: string | null;
   note: string | null;
+  /** Chosen cover/thumbnail (one of `images`). */
   image_url: string | null;
+  /** Ordered image gallery. */
+  images: string[];
   draft: boolean;
 }
 
@@ -125,6 +131,7 @@ function normSerial(r: Record<string, unknown>): Serial {
     warranty_text: (r.warranty_text as string) ?? null,
     note: (r.note as string) ?? null,
     image_url: (r.image_url as string) ?? null,
+    images: Array.isArray(r.images) ? (r.images as string[]) : [],
     sale_id: r.sale_id == null ? null : Number(r.sale_id),
     created_at: r.created_at as string,
   };

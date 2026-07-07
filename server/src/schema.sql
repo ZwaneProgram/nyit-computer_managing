@@ -244,6 +244,18 @@ alter table bundles add column if not exists warranty_months int not null defaul
 alter table product_serials add column if not exists warranty_text text;
 alter table bundles         add column if not exists warranty_text text;
 
+-- Multi-image gallery (added 2026-07-07): each unit / bundle carries an ordered
+-- list of image URLs in `images`; the existing `image_url` stays as the chosen
+-- cover/thumbnail (must be one of the entries in `images`). Bundles gain their
+-- own `image_url` cover too (they had none). Backfill `images` from the current
+-- single `image_url` so existing photos become the first gallery item. Idempotent.
+alter table product_serials add column if not exists images jsonb not null default '[]'::jsonb;
+alter table bundles         add column if not exists images jsonb not null default '[]'::jsonb;
+alter table bundles         add column if not exists image_url text;
+update product_serials
+   set images = jsonb_build_array(image_url)
+ where image_url is not null and (images is null or images = '[]'::jsonb);
+
 -- Seed the default product categories (idempotent).
 insert into categories (name, slug, sort) values
   ('การ์ดจอ', 'gpu', 1),

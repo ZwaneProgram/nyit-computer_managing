@@ -640,6 +640,9 @@ input, select, textarea { font-family: inherit; }
   .tbl-cards td.cell-actions { border-bottom: 0; justify-content: flex-end; }
   /* No divider under the last field of a card. */
   .tbl-cards td:last-child { border-bottom: 0; }
+  /* Inline edit form spans the whole card — don't card-ify it into a flex row
+     (that split the form and its Save/Cancel buttons left/right). */
+  .tbl-cards td.edit-cell { display: block; width: 100%; text-align: left; }
 }
 
 /* Very small phones */
@@ -711,3 +714,44 @@ input, select, textarea { font-family: inherit; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+/* ----- ImageManager (multi-image gallery: reorder + choose cover) ----- */
+.imgman { display: flex; flex-direction: column; gap: 10px; }
+.imgman-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 12px;
+}
+.imgman-item { display: flex; flex-direction: column; gap: 5px; }
+.imgman-thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface-sunk);
+  border: 1px solid var(--border);
+}
+.imgman-item.is-cover .imgman-thumb { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.imgman-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.imgman-badge {
+  position: absolute; top: 5px; left: 5px;
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 7px 1px 5px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 10px; font-weight: 600; line-height: 1.6;
+}
+.imgman-badge .icon { width: 11px; height: 11px; }
+.imgman-row { display: flex; justify-content: center; gap: 3px; }
+.imgman-row button {
+  display: grid; place-items: center;
+  width: 28px; height: 26px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--surface); color: var(--ink-3); cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.imgman-row button:hover:not(:disabled) { background: var(--surface-sunk); color: var(--ink); }
+.imgman-row button.on { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.imgman-row button.danger:hover:not(:disabled) { color: var(--neg); border-color: var(--neg); }
+.imgman-row button:disabled { opacity: 0.3; cursor: default; }
+.imgman-row .icon { width: 15px; height: 15px; }
+.imgman-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.btn.is-disabled { opacity: 0.5; pointer-events: none; }

@@ -8,6 +8,25 @@ interface BundleBody {
   warranty_months?: number;
   warranty_text?: string | null;
   product_ids?: number[];
+  images?: unknown;
+  image_url?: string | null;
+}
+
+/** Ordered, de-duped image URLs; reconcile the chosen cover to be one of them. */
+function cleanGallery(images: unknown, cover: unknown): { images: string[]; cover: string | null } {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(images)) {
+    for (const raw of images) {
+      const s = typeof raw === 'string' ? raw.trim() : '';
+      if (s && !seen.has(s)) { seen.add(s); out.push(s); }
+    }
+  }
+  let c = typeof cover === 'string' && cover.trim() ? cover.trim() : null;
+  let imgs = out.slice(0, 12);
+  if (c && !imgs.includes(c)) imgs = [c, ...imgs].slice(0, 12);
+  if (!c) c = imgs[0] ?? null;
+  return { images: imgs, cover: c };
 }
 
 /** Clamp a warranty value to a non-negative integer (0 = shop warranty). */
@@ -97,9 +116,10 @@ export async function bundleRoutes(app: FastifyInstance) {
     const client = await pool.connect();
     try {
       await client.query('begin');
+      const g = cleanGallery(b.images, b.image_url);
       const { rows } = await client.query(
-        'insert into bundles (name, discount_pct, warranty_months, warranty_text, created_by) values ($1, $2, $3, $4, $5) returning *',
-        [b.name.trim(), b.discount_pct ?? 0, cleanWarranty(b.warranty_months), cleanWarrantyText(b.warranty_text), req.user!.id],
+        'insert into bundles (name, discount_pct, warranty_months, warranty_text, images, image_url, created_by) values ($1, $2, $3, $4, $5::jsonb, $6, $7) returning *',
+        [b.name.trim(), b.discount_pct ?? 0, cleanWarranty(b.warranty_months), cleanWarrantyText(b.warranty_text), JSON.stringify(g.images), g.cover, req.user!.id],
       );
       const bundle = rows[0];
       for (const pid of ids) {
@@ -128,9 +148,10 @@ export async function bundleRoutes(app: FastifyInstance) {
     const client = await pool.connect();
     try {
       await client.query('begin');
+      const g = cleanGallery(b.images, b.image_url);
       const { rows } = await client.query(
-        'update bundles set name = $1, discount_pct = $2, warranty_months = $3, warranty_text = $4 where id = $5 returning *',
-        [b.name.trim(), b.discount_pct ?? 0, cleanWarranty(b.warranty_months), cleanWarrantyText(b.warranty_text), id],
+        'update bundles set name = $1, discount_pct = $2, warranty_months = $3, warranty_text = $4, images = $5::jsonb, image_url = $6 where id = $7 returning *',
+        [b.name.trim(), b.discount_pct ?? 0, cleanWarranty(b.warranty_months), cleanWarrantyText(b.warranty_text), JSON.stringify(g.images), g.cover, id],
       );
       if (!rows[0]) {
         await client.query('rollback');

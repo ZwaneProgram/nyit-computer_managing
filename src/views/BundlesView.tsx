@@ -3,6 +3,7 @@ import { Icons } from '../components/Icons';
 import { fmtTHB } from '../data/format';
 import { fetchCategories, fetchProducts, type Category, type Product } from '../data/inventory';
 import { createBundle, deleteBundle, fetchBundles, updateBundle, type Bundle } from '../data/bundles';
+import { ImageManager } from '../components/ImageManager';
 import { BUNDLE_WARRANTY_PRESETS, isPresetWarranty, warrantyDisplay, resolveWarranty, SHOP_WARRANTY_30 } from '../data/warranty';
 import { ApiError } from '../lib/api';
 
@@ -35,6 +36,8 @@ export function BundlesView({ showToast }: ViewProps) {
   const [discount, setDiscount] = useState(5);
   const [warranty, setWarranty] = useState('0');
   const [warrantyCustom, setWarrantyCustom] = useState(false);
+  const [images, setImages] = useState<string[]>([]);
+  const [cover, setCover] = useState<string | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState('');
@@ -78,6 +81,7 @@ export function BundlesView({ showToast }: ViewProps) {
 
   const startCreate = () => {
     setEditingId(null); setName(''); setDiscount(5); setWarranty('0'); setWarrantyCustom(false);
+    setImages([]); setCover(null);
     setSelected([]); setQ(''); setFilterCat('all');
     setMode('edit');
   };
@@ -85,6 +89,7 @@ export function BundlesView({ showToast }: ViewProps) {
     setEditingId(b.id); setName(b.name); setDiscount(b.discount_pct);
     setWarranty(b.warranty_text ?? String(b.warranty_months));
     setWarrantyCustom(!!b.warranty_text || !isPresetWarranty(String(b.warranty_months)));
+    setImages(b.images); setCover(b.image_url);
     setSelected(b.items.map((i) => i.product_id)); setQ(''); setFilterCat('all');
     setMode('edit');
   };
@@ -94,11 +99,12 @@ export function BundlesView({ showToast }: ViewProps) {
     setBusy(true);
     try {
       const { warranty_months, warranty_text } = resolveWarranty(warranty, warrantyCustom);
+      const gallery = { images, image_url: cover };
       if (editingId != null) {
-        await updateBundle(editingId, name.trim(), discount, warranty_months, warranty_text, selected);
+        await updateBundle(editingId, name.trim(), discount, warranty_months, warranty_text, selected, gallery);
         showToast('บันทึกการแก้ไขชุดสินค้าแล้ว');
       } else {
-        await createBundle(name.trim(), discount, warranty_months, warranty_text, selected);
+        await createBundle(name.trim(), discount, warranty_months, warranty_text, selected, gallery);
         showToast('สร้างชุดสินค้าเรียบร้อย');
       }
       setMode('list');
@@ -144,10 +150,14 @@ export function BundlesView({ showToast }: ViewProps) {
             return (
               <div key={b.id} className="card" style={{ overflow: 'hidden' }}>
                 <div className="bundle-cover">
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {b.items.slice(0, 4).map((it) => <Thumb key={it.product_id} url={it.image_url} lg />)}
-                    {b.items.length > 4 && <div className="thumb thumb-lg" style={{ background: 'var(--ink)', color: 'var(--bg)' }}>+{b.items.length - 4}</div>}
-                  </div>
+                  {b.image_url ? (
+                    <img src={b.image_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {b.items.slice(0, 4).map((it) => <Thumb key={it.product_id} url={it.image_url} lg />)}
+                      {b.items.length > 4 && <div className="thumb thumb-lg" style={{ background: 'var(--ink)', color: 'var(--bg)' }}>+{b.items.length - 4}</div>}
+                    </div>
+                  )}
                   {off > 0 && <span className="chip chip-accent" style={{ position: 'absolute', top: 12, left: 12 }}>ลด {off}%</span>}
                 </div>
                 <div className="card-pad">
@@ -225,6 +235,14 @@ export function BundlesView({ showToast }: ViewProps) {
               {warrantyCustom && (
                 <input className="input" style={{ marginTop: 6 }} type="text" placeholder="พิมพ์ได้ตามต้องการ เช่น 15 วัน, ประกันตลอดชีพ" value={isPresetWarranty(warranty) ? '' : warranty} onChange={(e) => setWarranty(e.target.value)} autoFocus />
               )}
+            </div>
+            <div className="field" style={{ marginTop: 14 }}>
+              <label className="field-label">รูปของชุดนี้ (ใส่ได้หลายรูป · เลือกรูปปกได้)</label>
+              <ImageManager
+                value={{ images, cover }}
+                onChange={(g) => { setImages(g.images); setCover(g.cover); }}
+                onError={showToast}
+              />
             </div>
           </div>
 
