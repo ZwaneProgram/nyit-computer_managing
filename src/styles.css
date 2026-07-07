@@ -763,8 +763,20 @@ input, select, textarea { font-family: inherit; }
   font-size: 12px; color: var(--ink-3); white-space: nowrap;
 }
 .date-filter > span { flex-shrink: 0; }
+.date-box { position: relative; display: inline-flex; align-items: center; }
 .date-filter input[type="date"] { width: auto; min-width: 138px; }
+/* Custom placeholder shown when empty: hide the native (blank on many Androids)
+   text by making the input color transparent, then overlay our own hint. */
+.date-filter input[type="date"].is-empty { color: transparent; }
+.date-box .date-ph {
+  position: absolute; left: 12px; pointer-events: none;
+  color: var(--ink-4); font-size: 13px;
+}
 @media (max-width: 600px) {
-  .date-filter { flex: 1 1 44%; }
-  .date-filter input[type="date"] { min-width: 0; width: 100%; }
+  /* Each date filter takes its own full row: label on the left, a wide box on
+     the right so the placeholder isn't clipped. */
+  .date-filter { flex: 1 1 100%; justify-content: space-between; }
+  .date-filter > span { min-width: 68px; }
+  .date-box { flex: 1; margin-left: 10px; }
+  .date-filter input[type="date"] { flex: 1; width: 100%; min-width: 0; }
 }

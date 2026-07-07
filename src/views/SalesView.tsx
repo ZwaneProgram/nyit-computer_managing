@@ -240,8 +240,20 @@ export function SalesView({ showToast }: ViewProps) {
                 <Icons.search />
                 <input placeholder="ค้นหาเลขบิล, ลูกค้า, หรือสินค้า..." value={hq} onChange={(e) => setHq(e.target.value)} />
               </div>
-              <input className="input" type="date" value={hFrom} onChange={(e) => setHFrom(e.target.value)} style={{ width: 'auto' }} title="ตั้งแต่วันที่" />
-              <input className="input" type="date" value={hTo} onChange={(e) => setHTo(e.target.value)} style={{ width: 'auto' }} title="ถึงวันที่" />
+              <label className="date-filter" title="ตั้งแต่วันที่">
+                <span>ตั้งแต่</span>
+                <span className="date-box">
+                  <input className={'input' + (hFrom ? '' : ' is-empty')} type="date" value={hFrom} onChange={(e) => setHFrom(e.target.value)} />
+                  {!hFrom && <span className="date-ph">วัน/เดือน/ปี</span>}
+                </span>
+              </label>
+              <label className="date-filter" title="ถึงวันที่">
+                <span>ถึง</span>
+                <span className="date-box">
+                  <input className={'input' + (hTo ? '' : ' is-empty')} type="date" value={hTo} onChange={(e) => setHTo(e.target.value)} />
+                  {!hTo && <span className="date-ph">วัน/เดือน/ปี</span>}
+                </span>
+              </label>
               {(hq || hFrom || hTo) && (
                 <button className="btn btn-sm btn-ghost" onClick={() => { setHq(''); setHFrom(''); setHTo(''); }}>ล้างตัวกรอง</button>
               )}

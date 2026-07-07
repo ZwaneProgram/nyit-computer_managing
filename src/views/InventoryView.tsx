@@ -182,11 +182,17 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
           </select>
           <label className="date-filter" title="เพิ่มตั้งแต่วันที่">
             <span>เพิ่มตั้งแต่</span>
-            <input className="input" type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
+            <span className="date-box">
+              <input className={'input' + (dateFrom ? '' : ' is-empty')} type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
+              {!dateFrom && <span className="date-ph">วัน/เดือน/ปี</span>}
+            </span>
           </label>
           <label className="date-filter" title="ถึงวันที่">
             <span>ถึง</span>
-            <input className="input" type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} />
+            <span className="date-box">
+              <input className={'input' + (dateTo ? '' : ' is-empty')} type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} />
+              {!dateTo && <span className="date-ph">วัน/เดือน/ปี</span>}
+            </span>
           </label>
           {(dateFrom || dateTo) && (
             <button className="btn btn-sm btn-ghost" onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>ล้างตัวกรองวันที่</button>
