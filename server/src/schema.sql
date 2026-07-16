@@ -256,6 +256,20 @@ update product_serials
    set images = jsonb_build_array(image_url)
  where image_url is not null and (images is null or images = '[]'::jsonb);
 
+-- AI image library (added 2026-07-15): every image produced by
+-- POST /api/ai/generate-product-image is recorded here, keyed to the product it
+-- was generated for, so it can be picked later when managing a unit's gallery.
+-- on delete cascade cleans up a product's images with the product. Idempotent.
+create table if not exists ai_images (
+  id         serial primary key,
+  product_id bigint not null references products(id) on delete cascade,
+  url        text not null,
+  prompt     text,
+  created_at timestamptz not null default now()
+);
+create index if not exists ai_images_product_idx
+  on ai_images(product_id, created_at desc);
+
 -- Seed the default product categories (idempotent).
 insert into categories (name, slug, sort) values
   ('การ์ดจอ', 'gpu', 1),

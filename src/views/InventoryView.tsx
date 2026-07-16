@@ -449,7 +449,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
 
             {adding && (
               <div className="card card-pad" style={{ background: 'var(--surface-sunk)', marginBottom: 14 }}>
-                <UnitFields value={addForm} onChange={setAddForm} onUploadError={showToast} />
+                <UnitFields value={addForm} onChange={setAddForm} onUploadError={showToast} productId={product.id} />
                 <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                   <button className="btn btn-primary btn-sm" disabled={busy} onClick={addUnit}><Icons.check /> เพิ่ม</button>
                   <button className="btn btn-sm" onClick={() => { setAdding(false); setAddForm(blankUnit()); }}>ยกเลิก</button>
@@ -465,7 +465,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                     editId === s.id ? (
                       <tr key={s.id}>
                         <td colSpan={7} className="edit-cell" style={{ padding: 14 }}>
-                          <UnitFields value={editForm} onChange={setEditForm} onUploadError={showToast} />
+                          <UnitFields value={editForm} onChange={setEditForm} onUploadError={showToast} productId={product.id} />
                           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                             <button className="btn btn-primary btn-sm" disabled={busy} onClick={saveEdit}><Icons.check /> บันทึก</button>
                             <button className="btn btn-sm" onClick={() => setEditId(null)}>ยกเลิก</button>
@@ -528,10 +528,11 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
 }
 
 /** Shared editable fields for one unit (add + edit). */
-function UnitFields({ value, onChange, onUploadError }: {
+function UnitFields({ value, onChange, onUploadError, productId }: {
   value: UnitFormState;
   onChange: (v: UnitFormState) => void;
   onUploadError: (msg: string) => void;
+  productId: number;
 }) {
   const set = (patch: Partial<UnitFormState>) => onChange({ ...value, ...patch });
   return (
@@ -577,6 +578,7 @@ function UnitFields({ value, onChange, onUploadError }: {
           value={{ images: value.images, cover: value.cover }}
           onChange={(g) => set({ images: g.images, cover: g.cover })}
           onError={onUploadError}
+          productId={productId}
         />
       </div>
       <div className="field" style={{ gridColumn: '1 / -1' }}>

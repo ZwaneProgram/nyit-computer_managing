@@ -65,6 +65,29 @@ export async function generateProductImage(
   );
 }
 
+export function generateBundlePoster(
+  bundleId: number,
+  opts: { price?: number; priceNote?: string; subtitle?: string } = {},
+): Promise<{ imageUrl: string }> {
+  return http.post<{ imageUrl: string }>('/api/ai/generate-bundle-poster', { bundleId, ...opts });
+}
+
+export interface AiImage {
+  id: number;
+  url: string;
+  prompt: string | null;
+  created_at: string;
+}
+
+// Stored AI images for a product, newest first (see POST generate-product-image).
+export function listProductAiImages(productId: number): Promise<AiImage[]> {
+  return http.get<AiImage[]>(`/api/ai/images?productId=${productId}`);
+}
+
+export function deleteAiImage(id: number): Promise<void> {
+  return http.del(`/api/ai/images/${id}`);
+}
+
 // Tidy a post for display/copy: normalise escaped newlines and collapse runs of
 // blank lines. (Ported from the standalone generator's lib/formatPost.)
 export function formatPost(text: string): string {

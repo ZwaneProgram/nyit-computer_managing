@@ -6,6 +6,7 @@ import { createBundle, deleteBundle, fetchBundles, updateBundle, type Bundle } f
 import { ImageManager } from '../components/ImageManager';
 import { BUNDLE_WARRANTY_PRESETS, isPresetWarranty, warrantyDisplay, resolveWarranty, SHOP_WARRANTY_30 } from '../data/warranty';
 import { ApiError } from '../lib/api';
+import { generateBundlePoster } from '../data/aiPost';
 
 interface ViewProps {
   showToast: (msg: string) => void;
@@ -42,6 +43,12 @@ export function BundlesView({ showToast }: ViewProps) {
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState('');
   const [filterCat, setFilterCat] = useState<number | 'all'>('all');
+
+  const [posterOpen, setPosterOpen] = useState(false);
+  const [posterPrice, setPosterPrice] = useState('');
+  const [posterNote, setPosterNote] = useState('ราคานี้ยังไม่รวมการ์ดจอ');
+  const [posterSubtitle, setPosterSubtitle] = useState('แรง ลื่น ครบ จบในเครื่องเดียว');
+  const [posterBusy, setPosterBusy] = useState(false);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -124,6 +131,34 @@ export function BundlesView({ showToast }: ViewProps) {
       loadList();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'ลบไม่สำเร็จ');
+    }
+  };
+
+  const openPoster = () => {
+    // Pre-fill with the auto-calculated price (component list price minus discount).
+    const computed = Math.round(listPrice * (1 - discount / 100));
+    setPosterPrice(computed > 0 ? String(computed) : '');
+    setPosterOpen(true);
+  };
+
+  const runPoster = async () => {
+    if (editingId == null) return;
+    setPosterBusy(true);
+    try {
+      const priceNum = Number(posterPrice);
+      const { imageUrl } = await generateBundlePoster(editingId, {
+        price: Number.isFinite(priceNum) && priceNum > 0 ? priceNum : undefined,
+        priceNote: posterNote.trim() || undefined,
+        subtitle: posterSubtitle.trim() || undefined,
+      });
+      setImages((prev) => (prev.includes(imageUrl) ? prev : [...prev, imageUrl]));
+      setCover((c) => c ?? imageUrl);
+      setPosterOpen(false);
+      showToast('สร้างโปสเตอร์แล้ว — อย่าลืมกดบันทึกการแก้ไข');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'สร้างโปสเตอร์ไม่สำเร็จ');
+    } finally {
+      setPosterBusy(false);
     }
   };
 
@@ -243,6 +278,39 @@ export function BundlesView({ showToast }: ViewProps) {
                 onChange={(g) => { setImages(g.images); setCover(g.cover); }}
                 onError={showToast}
               />
+              {editingId != null && (
+                <div style={{ marginTop: 10 }}>
+                  {!posterOpen ? (
+                    <button type="button" className="btn btn-sm imgman-ai-btn" onClick={openPoster}>
+                      🎨 สร้างโปสเตอร์ AI
+                    </button>
+                  ) : (
+                    <div className="imgman-picker">
+                      <div className="imgman-picker-head">
+                        <span className="imgman-picker-title">🎨 สร้างโปสเตอร์ชุดคอม</span>
+                        <button type="button" className="imgman-picker-close" title="ปิด" aria-label="ปิด" onClick={() => setPosterOpen(false)}><Icons.x /></button>
+                      </div>
+                      <div className="imgman-picker-body" style={{ display: 'grid', gap: 10 }}>
+                        <div className="field">
+                          <label className="field-label">ราคาบนโปสเตอร์ (บาท)</label>
+                          <input className="input num" type="number" placeholder="เช่น 21800" value={posterPrice} onChange={(e) => setPosterPrice(e.target.value)} />
+                        </div>
+                        <div className="field">
+                          <label className="field-label">หมายเหตุราคา</label>
+                          <input className="input" type="text" value={posterNote} onChange={(e) => setPosterNote(e.target.value)} />
+                        </div>
+                        <div className="field">
+                          <label className="field-label">คำโปรย</label>
+                          <input className="input" type="text" value={posterSubtitle} onChange={(e) => setPosterSubtitle(e.target.value)} />
+                        </div>
+                        <button type="button" className="btn btn-primary btn-sm" disabled={posterBusy} onClick={runPoster}>
+                          {posterBusy ? 'กำลังสร้าง...' : 'สร้างโปสเตอร์'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

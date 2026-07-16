@@ -1,11 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { query } from '../db';
 import { requireAuth } from '../auth';
+import { renderHtmlToPng } from '../lib/renderHtmlToPng';
+import { buildBundlePosterHtml, type PosterSpecRow } from '../lib/bundlePosterTemplate';
 
 const AI_IMAGE_DIR = fileURLToPath(new URL('../../uploads/ai-images', import.meta.url));
 
@@ -499,11 +501,11 @@ ${fieldList}
     }
 
     const b = (req.body ?? {}) as { productId?: number; serialId?: number };
-    let name = '', model = '', categorySlug = '', price = 0;
+    let name = '', model = '', categorySlug = '', price = 0, productId = 0;
 
     if (b.serialId) {
       const { rows } = await query(
-        `select ps.price, p.name, p.model, c.slug as category_slug
+        `select ps.price, p.id as product_id, p.name, p.model, c.slug as category_slug
            from product_serials ps
            join products p on p.id = ps.product_id
            left join categories c on c.id = p.category_id
@@ -516,6 +518,7 @@ ${fieldList}
       model = (r.model as string) ?? '';
       categorySlug = (r.category_slug as string) ?? '';
       price = num(r.price);
+      productId = num(r.product_id);
     } else if (b.productId) {
       const [c] = await fetchComponents([b.productId]);
       if (!c) return reply.code(404).send({ error: 'ไม่พบสินค้านี้' });
@@ -523,6 +526,7 @@ ${fieldList}
       model = c.model ?? '';
       categorySlug = c.category_slug ?? '';
       price = c.price;
+      productId = b.productId;
     } else {
       return reply.code(400).send({ error: 'กรุณาเลือกสินค้า' });
     }
@@ -575,10 +579,138 @@ ${fieldList}
         return reply.code(502).send({ error: 'ไม่ได้รับข้อมูลรูปภาพจาก AI' });
       }
 
+      try {
+        await query(
+          'insert into ai_images (product_id, url, prompt) values ($1, $2, $3)',
+          [productId, `/uploads/ai-images/${filename}`, prompt],
+        );
+      } catch (e) {
+        app.log.error(e); // library record is best-effort; the file still exists
+      }
+
       return { imageUrl: `/uploads/ai-images/${filename}`, prompt };
     } catch (err) {
       app.log.error(err);
       return reply.code(502).send({ error: (err as Error).message || 'สร้างรูปภาพไม่สำเร็จ' });
+    }
+  });
+
+  // GET /api/ai/images?productId=X — stored AI images for a product, newest first.
+  app.get('/api/ai/images', { preHandler: requireAuth() }, async (req, reply) => {
+    const productId = Number((req.query as { productId?: string }).productId);
+    if (!Number.isInteger(productId) || productId <= 0) {
+      return reply.code(400).send({ error: 'productId ไม่ถูกต้อง' });
+    }
+    const { rows } = await query(
+      'select id, url, prompt, created_at from ai_images where product_id = $1 order by created_at desc, id desc',
+      [productId],
+    );
+    return rows;
+  });
+
+  // DELETE /api/ai/images/:id — remove one image from the library and its file.
+  app.delete('/api/ai/images/:id', { preHandler: requireAuth() }, async (req, reply) => {
+    const id = Number((req.params as { id?: string }).id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return reply.code(400).send({ error: 'id ไม่ถูกต้อง' });
+    }
+    const { rows } = await query<{ url: string }>(
+      'delete from ai_images where id = $1 returning url',
+      [id],
+    );
+    if (!rows[0]) return reply.code(404).send({ error: 'ไม่พบรูปนี้' });
+    const filename = rows[0].url.split('/').pop();
+    if (filename) {
+      await unlink(join(AI_IMAGE_DIR, filename)).catch(() => {}); // best-effort
+    }
+    return { ok: true };
+  });
+
+  // POST /api/ai/generate-bundle-poster — render a promo spec-sheet poster for a
+  // saved bundle. Template holds all text/specs/price from the DB; AI supplies
+  // only the PC photo. Returns the poster URL; the client adds it to the bundle
+  // gallery and saves the bundle to persist it.
+  app.post('/api/ai/generate-bundle-poster', { preHandler: requireAuth() }, async (req, reply) => {
+    if (!process.env.IMAGE_API_KEY && !process.env.OPENAI_API_KEY) {
+      return reply.code(503).send({ error: 'ยังไม่ได้ตั้งค่า IMAGE_API_KEY ใน server/.env' });
+    }
+    const b = (req.body ?? {}) as { bundleId?: number; price?: number; priceNote?: string; subtitle?: string };
+    if (!b.bundleId) return reply.code(400).send({ error: 'กรุณาบันทึกชุดสินค้าก่อนสร้างโปสเตอร์' });
+
+    // Bundle exists?
+    const { rows: bundleRows } = await query<{ discount_pct: number }>(
+      'select discount_pct from bundles where id = $1',
+      [b.bundleId],
+    );
+    if (!bundleRows[0]) return reply.code(404).send({ error: 'ไม่พบชุดสินค้านี้' });
+
+    // Components → spec rows, ordered cpu→mb→ram→ssd→psu→gpu→other.
+    const { rows: comps } = await query<{ name: string; model: string | null; slug: string | null; price: number }>(
+      `select p.name, p.model, c.slug,
+              coalesce(min(s.price) filter (where s.status = 'in_stock'), 0) as price
+         from bundle_items bi
+         join products p on p.id = bi.product_id
+         left join categories c on c.id = p.category_id
+         left join product_serials s on s.product_id = p.id
+        where bi.bundle_id = $1
+        group by p.id, p.name, p.model, c.slug
+        order by p.name`,
+      [b.bundleId],
+    );
+    if (!comps.length) return reply.code(400).send({ error: 'ชุดนี้ยังไม่มีสินค้า' });
+
+    const CAT_LABEL: Record<string, string> = {
+      cpu: 'CPU', mb: 'MAINBOARD', ram: 'RAM', ssd: 'STORAGE', psu: 'POWER SUPPLY', gpu: 'GPU', monitor: 'MONITOR',
+    };
+    const ORDER = ['cpu', 'mb', 'ram', 'ssd', 'psu', 'gpu'];
+    const rank = (slug: string | null) => {
+      const i = ORDER.indexOf(slug ?? '');
+      return i === -1 ? ORDER.length : i;
+    };
+    const specs: PosterSpecRow[] = comps
+      .slice()
+      .sort((a, z) => rank(a.slug) - rank(z.slug))
+      .map((c) => ({
+        slug: c.slug ?? 'default',
+        label: CAT_LABEL[c.slug ?? ''] ?? 'อุปกรณ์',
+        text: [c.name, c.model].filter(Boolean).join(' ').toUpperCase(),
+      }));
+
+    // Price: caller value wins, else sum(component prices) * (1 - discount%).
+    const sum = comps.reduce((s, c) => s + Number(c.price || 0), 0);
+    const computed = Math.round(sum * (1 - (Number(bundleRows[0].discount_pct) || 0) / 100));
+    const price = typeof b.price === 'number' && b.price > 0 ? b.price : computed;
+
+    // Shop settings for the footer (fall back to store defaults when blank).
+    const { rows: sRows } = await query<Record<string, string | null>>('select * from shop_settings where id = 1');
+    const s = sRows[0] ?? {};
+    const phone = s.post_phone || s.phone || '081-961-3869';
+    const website = s.post_website || 'ny-itshop.com';
+    const facebook = s.post_page_url || 'N.Y. ITSHOP';
+    const warranty = s.post_warranty || '30 วัน';
+
+    try {
+      const photoPrompt = `A photorealistic studio product photo of a complete assembled desktop gaming PC tower with the side glass panel showing RGB fans and components, on a dark reflective surface, dramatic rim lighting, clean professional advertising photography. No text, no logos, no watermark, no captions. Centered subject, dark studio background.`;
+      const photoBuf = await requestAiImageBuffer(photoPrompt);
+      const photoDataUri = `data:${sniffImageMime(photoBuf)};base64,${photoBuf.toString('base64')}`;
+
+      const html = buildBundlePosterHtml({
+        subtitle: b.subtitle?.trim() || 'แรง ลื่น ครบ จบในเครื่องเดียว',
+        price,
+        priceNote: b.priceNote?.trim() || 'ราคานี้ยังไม่รวมการ์ดจอ',
+        specs,
+        photoDataUri,
+        phone, website, facebook, warranty,
+      });
+
+      const png = await renderHtmlToPng(html, { width: 1200, height: 1200 });
+      await mkdir(AI_IMAGE_DIR, { recursive: true });
+      const filename = `ai-${Date.now()}-${randomBytes(4).toString('hex')}.png`;
+      await writeFile(join(AI_IMAGE_DIR, filename), png);
+      return { imageUrl: `/uploads/ai-images/${filename}` };
+    } catch (err) {
+      app.log.error(err);
+      return reply.code(502).send({ error: (err as Error).message || 'สร้างโปสเตอร์ไม่สำเร็จ' });
     }
   });
 
@@ -820,6 +952,40 @@ const DEFAULT_THEME: CategoryTheme = {
   productType: 'computer hardware component',
   typeLabel: 'COMPUTER HARDWARE',
 };
+
+// Sniff image MIME type from magic bytes to build a correct data URI.
+function sniffImageMime(buf: Buffer): string {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length >= 4 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) return 'image/webp';
+  return 'image/png';
+}
+
+// Call the configured image API and return the PNG bytes (used by the bundle
+// poster to embed the AI photo as a data URI). Mirrors the product-image call.
+async function requestAiImageBuffer(prompt: string): Promise<Buffer> {
+  const imgApiKey = process.env.IMAGE_API_KEY ?? process.env.OPENAI_API_KEY ?? '';
+  const imgBaseUrl = (process.env.IMAGE_API_BASE_URL ?? 'https://api.openai.com').replace(/\/+$/, '');
+  const imgModel = process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2';
+  const res = await fetch(`${imgBaseUrl}/v1/images/generations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${imgApiKey}` },
+    body: JSON.stringify({ model: imgModel, prompt, n: 1, size: '1024x1024', quality: 'high' }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const msg = ((err.error as Record<string, unknown> | undefined)?.message as string) ?? `HTTP ${res.status}`;
+    throw new Error(`Image API: ${msg}`);
+  }
+  const data = (await res.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
+  const item = data.data?.[0];
+  if (item?.b64_json) return Buffer.from(item.b64_json, 'base64');
+  if (item?.url) {
+    const r = await fetch(item.url, { signal: AbortSignal.timeout(30_000) });
+    return Buffer.from(await r.arrayBuffer());
+  }
+  throw new Error('AI ไม่สร้างรูปภาพ');
+}
 
 function buildImagePrompt(p: { name: string; model: string; categorySlug: string; price: number }): string {
   const theme = CATEGORY_IMAGE_THEME[p.categorySlug] ?? DEFAULT_THEME;

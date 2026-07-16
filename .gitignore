@@ -11,4 +11,8 @@ npm-debug.log*
 
 # Uploaded product images (runtime data, not source)
 server/uploads/
+/uploads/
 /docs
+
+# Superpowers skill scratch files (not source)
+.superpowers/

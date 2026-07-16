@@ -164,3 +164,20 @@ When ready to use a subdomain (e.g. `app.nyit.one`) instead of `:3000`:
 5. Set `COOKIE_SECURE=true` in `server/.env` and `pm2 restart nyit-app`.
 
 (Ask Claude/Codex to generate the exact vhost file when you get here.)
+
+---
+
+## Bundle poster rendering (Chromium)
+
+The bundle-poster feature renders HTML to PNG with headless Chromium via
+`playwright-core`. Install a Chromium binary once and point `CHROMIUM_PATH` at it.
+
+On the Ubuntu VPS:
+
+    sudo apt-get update && sudo apt-get install -y chromium-browser fonts-thai-tlwg
+
+Then set in `server/.env`:
+
+    CHROMIUM_PATH=/usr/bin/chromium-browser
+
+(`fonts-thai-tlwg` ensures Thai text renders. Restart the app after changing .env.)
