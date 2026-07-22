@@ -183,10 +183,30 @@ Steps that were run (2026-07-22):
 5. Set `COOKIE_SECURE=true` in `server/.env` and `pm2 restart nyit-app`
    (required now that cookies go over HTTPS).
 
-### Storefront subdomain (later)
-Same recipe: A record `shop` → same IP, copy the vhost with
-`ServerName shop.ny-itshop.com` and port **`3001`**, then
-`certbot --apache -d shop.ny-itshop.com`.
+### Storefront subdomain — DONE (https://store.ny-itshop.com)
+The `nyitfront` storefront (`/var/www/nyitfront`, pm2 `nyitfront` on `:3001`) got
+its own subdomain the same way (2026-07-22):
+1. **Namecheap** A record: Host `store` → `194.233.88.142`.
+2. `/etc/apache2/sites-available/store.ny-itshop.com.conf` with
+   `ServerName store.ny-itshop.com` and `ProxyPass / http://127.0.0.1:3001/`
+   (+ `ProxyPassReverse`), then `a2ensite` + `configtest` + reload.
+3. `sudo certbot --apache -d store.ny-itshop.com` (choose "Redirect").
+4. **Mixed-content fix (important for the storefront):** its product images came
+   from `NEXT_PUBLIC_UPLOADS_BASE_URL` = `http://194.233.88.142:3000`, which the
+   browser blocks on an HTTPS page. Set it to `https://pos.ny-itshop.com` in
+   `/var/www/nyitfront/.env.local`, then **`npm run build && pm2 reload nyitfront`**
+   (NEXT_PUBLIC vars are baked in at build time — a rebuild is required, not just
+   `--update-env`). Images then load via the pos vhost's `/uploads` proxy over HTTPS.
+
+> **Gotcha:** the Namecheap host name must match the vhost `ServerName` and the
+> certbot `-d` value, and the subdomain must resolve publicly *before* running
+> certbot — otherwise certbot fails with `NXDOMAIN`.
+
+> **Namecheap BasicDNS note:** on BasicDNS the root domain follows the Advanced-DNS
+> host records. If those are the default parking/redirect records, `ny-itshop.com`
+> resolves to Namecheap's parking page instead of the VPS (WordPress looks "down").
+> Fix = A records `@` and `www` → `194.233.88.142`. Don't switch nameservers back
+> to Custom DNS — that would also break the `pos`/`store` subdomains.
 
 ---
 
