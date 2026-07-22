@@ -62,6 +62,7 @@ create table if not exists bundles (
 create table if not exists bundle_items (
   bundle_id  bigint not null references bundles(id) on delete cascade,
   product_id bigint not null references products(id) on delete cascade,
+  serial_id  bigint references product_serials(id) on delete set null,
   primary key (bundle_id, product_id)
 );
 
@@ -238,6 +239,12 @@ update users set role = 'owner'
 
 -- Per-bundle warranty (added 2026-07-05): 0 = shop warranty (30 days), >0 = months.
 alter table bundles add column if not exists warranty_months int not null default 0;
+
+-- Bundle unit pinning (added 2026-07-22): each component may pin a specific unit
+-- (product_serials.id). null = auto (cheapest for display, FIFO at sale). The pin
+-- is a default, not a lock — a sold pinned unit falls back to auto. on delete set
+-- null keeps the row if the unit is ever hard-deleted. Idempotent.
+alter table bundle_items add column if not exists serial_id bigint references product_serials(id) on delete set null;
 
 -- Free-text warranty (added 2026-07-05): when set, overrides warranty_months for
 -- display (e.g. "15 วัน", "ประกันตลอดชีพ"). Applies to units and bundles.

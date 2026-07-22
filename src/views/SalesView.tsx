@@ -23,6 +23,9 @@ export function SalesView({ showToast }: ViewProps) {
   const [cart, setCart] = useState<CartUnit[]>([]);
   const [bundleId, setBundleId] = useState<number | null>(null);
   const [bundleQty, setBundleQty] = useState(1);
+  // Per-component unit chosen at checkout (product_id -> serial id). Used when
+  // selling a single set; multi-set sales fall back to auto pick on the server.
+  const [bundlePicks, setBundlePicks] = useState<Record<number, number>>({});
 
   const [customer, setCustomer] = useState({ name: '', phone: '', address: '', taxId: '' });
   const [shipping, setShipping] = useState(0);
@@ -93,6 +96,33 @@ export function SalesView({ showToast }: ViewProps) {
     });
   };
 
+  // When a bundle is selected, load each component's in-stock units so the
+  // checkout unit picker (single-set sales) has options.
+  useEffect(() => {
+    const b = bundles.find((x) => x.id === bundleId);
+    if (!b) { setBundlePicks({}); return; }
+    b.items.forEach((it) => loadUnits(it.product_id));
+  }, [bundleId, bundles, loadUnits]);
+
+  // Default each component's pick to its pinned unit (if still in stock) or the
+  // cheapest, once units load — without clobbering a choice the cashier made.
+  useEffect(() => {
+    const b = bundles.find((x) => x.id === bundleId);
+    if (!b) return;
+    setBundlePicks((prev) => {
+      const next = { ...prev };
+      for (const it of b.items) {
+        const units = unitMap[it.product_id];
+        if (!units || units.length === 0) continue;
+        if (next[it.product_id] != null && units.some((u) => u.id === next[it.product_id])) continue;
+        const pinned = it.pinned_ok && it.serial_id != null && units.some((u) => u.id === it.serial_id) ? it.serial_id : null;
+        const cheapest = units.reduce((m, u) => (u.price < m.price ? u : m), units[0]);
+        next[it.product_id] = pinned ?? cheapest.id;
+      }
+      return next;
+    });
+  }, [bundleId, bundles, unitMap]);
+
   // Debounce the product search box, then look up matching serials/SKUs.
   useEffect(() => {
     const id = window.setTimeout(() => setSearchQDebounced(searchQ.trim()), 250);
@@ -120,12 +150,24 @@ export function SalesView({ showToast }: ViewProps) {
   const selectedBundle = bundles.find((b) => b.id === bundleId) ?? null;
   const chosenIds = new Set(cart.map((c) => c.serial.id));
 
+  // Units chosen for each component (single-set sales). When every component has
+  // a resolved unit, the total reflects the actual units instead of the cheapest.
+  const bundlePickUnits = selectedBundle
+    ? selectedBundle.items.map((it) => unitMap[it.product_id]?.find((u) => u.id === bundlePicks[it.product_id]) ?? null)
+    : [];
+  const picksReady = type === 'bundle' && bundleQty === 1 && !!selectedBundle
+    && bundlePickUnits.length > 0 && bundlePickUnits.every((u) => u != null);
+
   const subtotal = type === 'item'
     ? cart.reduce((s, c) => s + c.serial.price, 0)
-    : (selectedBundle ? selectedBundle.price * bundleQty : 0);
+    : picksReady
+      ? Math.round(bundlePickUnits.reduce((s, u) => s + u!.price, 0) * (1 - selectedBundle!.discount_pct / 100))
+      : (selectedBundle ? selectedBundle.price * bundleQty : 0);
   const cost = type === 'item'
     ? cart.reduce((s, c) => s + c.serial.cost, 0)
-    : (selectedBundle ? selectedBundle.total_cost * bundleQty : 0);
+    : picksReady
+      ? bundlePickUnits.reduce((s, u) => s + u!.cost, 0)
+      : (selectedBundle ? selectedBundle.total_cost * bundleQty : 0);
   const total = subtotal + shipping - discount;
   const profit = subtotal - cost - discount;
   const itemCount = type === 'item' ? cart.length : bundleQty;
@@ -159,7 +201,7 @@ export function SalesView({ showToast }: ViewProps) {
   };
 
   const resetDraft = () => {
-    setCart([]); setBundleId(null); setBundleQty(1);
+    setCart([]); setBundleId(null); setBundleQty(1); setBundlePicks({});
     setCustomer({ name: '', phone: '', address: '', taxId: '' });
     setShipping(0); setDiscount(0);
     setShowSearch(false); setSearchQ(''); setSearchQDebounced(''); setUnitMatches([]); setExpanded(new Set());
@@ -176,7 +218,13 @@ export function SalesView({ showToast }: ViewProps) {
       shipping, discount,
       ...(type === 'item'
         ? { items: cart.map((c) => ({ serial_id: c.serial.id })) }
-        : { bundle_id: bundleId!, bundle_qty: bundleQty }),
+        : {
+            bundle_id: bundleId!,
+            bundle_qty: bundleQty,
+            // Send the hand-picked units only for single-set sales; the server
+            // auto-picks (pinned → FIFO) for multi-set sales.
+            ...(picksReady ? { serials: selectedBundle!.items.map((it) => bundlePicks[it.product_id]) } : {}),
+          }),
     };
     setBusy(true);
     try {
@@ -449,6 +497,37 @@ export function SalesView({ showToast }: ViewProps) {
                       <button className="btn btn-sm btn-icon btn-ghost" disabled={bundleQty >= selectedBundle.stock} onClick={() => setBundleQty((q) => q + 1)}>+</button>
                     </div>
                   </div>
+                )}
+                {type === 'bundle' && selectedBundle && (
+                  bundleQty === 1 ? (
+                    <div className="field" style={{ marginBottom: 12 }}>
+                      <label className="field-label">เลือกชิ้นในชุด</label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {selectedBundle.items.map((it) => {
+                          const units = unitMap[it.product_id];
+                          return (
+                            <div key={it.product_id}>
+                              <div className="muted" style={{ fontSize: 11.5, marginBottom: 2 }}>{it.name}</div>
+                              <select
+                                className="select"
+                                style={{ width: '100%', fontSize: 12, height: 32 }}
+                                value={bundlePicks[it.product_id] ?? ''}
+                                onChange={(e) => setBundlePicks((prev) => ({ ...prev, [it.product_id]: Number(e.target.value) }))}
+                              >
+                                {units == null
+                                  ? <option value="">กำลังโหลดชิ้น...</option>
+                                  : units.length === 0
+                                    ? <option value="">ไม่มีชิ้นในสต๊อก</option>
+                                    : units.map((u) => <option key={u.id} value={u.id}>{u.serial} · {fmtTHB(u.price)}</option>)}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>เลือกชิ้นเองได้เมื่อขายทีละชุด · ตอนนี้ระบบเลือกชิ้นให้อัตโนมัติ</div>
+                  )
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>

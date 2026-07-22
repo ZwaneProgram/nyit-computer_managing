@@ -10,6 +10,12 @@ export interface BundleItem {
   cost: number;
   image_url: string | null;
   stock: number;
+  /** Pinned unit for this component; null = auto (cheapest). */
+  serial_id: number | null;
+  /** SN of the pinned unit, for display. */
+  pinned_serial: string | null;
+  /** Whether the pinned unit is still in stock (false → showing the fallback). */
+  pinned_ok: boolean;
 }
 
 export interface Bundle {
@@ -48,6 +54,9 @@ function normItem(r: Record<string, unknown>): BundleItem {
     cost: num(r.cost),
     image_url: (r.image_url as string) ?? null,
     stock: num(r.stock),
+    serial_id: r.serial_id == null ? null : Number(r.serial_id),
+    pinned_serial: (r.pinned_serial as string) ?? null,
+    pinned_ok: r.pinned_ok === true,
   };
 }
 
@@ -85,12 +94,15 @@ export interface BundleImages {
   image_url: string | null;
 }
 
-export async function createBundle(name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, product_ids: number[], gallery: BundleImages): Promise<void> {
-  await http.post('/api/bundles', { name, discount_pct, warranty_months, warranty_text, product_ids, ...gallery });
+/** One component to save: a product with an optional pinned unit (null = auto). */
+export interface BundleComponent { product_id: number; serial_id: number | null; }
+
+export async function createBundle(name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, items: BundleComponent[], gallery: BundleImages): Promise<void> {
+  await http.post('/api/bundles', { name, discount_pct, warranty_months, warranty_text, items, ...gallery });
 }
 
-export async function updateBundle(id: number, name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, product_ids: number[], gallery: BundleImages): Promise<void> {
-  await http.put(`/api/bundles/${id}`, { name, discount_pct, warranty_months, warranty_text, product_ids, ...gallery });
+export async function updateBundle(id: number, name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, items: BundleComponent[], gallery: BundleImages): Promise<void> {
+  await http.put(`/api/bundles/${id}`, { name, discount_pct, warranty_months, warranty_text, items, ...gallery });
 }
 
 export async function deleteBundle(id: number): Promise<void> {

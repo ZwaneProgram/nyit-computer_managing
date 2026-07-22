@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icons } from '../components/Icons';
 import { fmtTHB } from '../data/format';
-import { fetchCategories, fetchProducts, type Category, type Product } from '../data/inventory';
+import { fetchCategories, fetchProduct, fetchProducts, type Category, type Product, type Serial } from '../data/inventory';
 import { createBundle, deleteBundle, fetchBundles, updateBundle, type Bundle } from '../data/bundles';
 import { ImageManager } from '../components/ImageManager';
 import { BUNDLE_WARRANTY_PRESETS, isPresetWarranty, warrantyDisplay, resolveWarranty, SHOP_WARRANTY_30 } from '../data/warranty';
@@ -40,6 +40,10 @@ export function BundlesView({ showToast }: ViewProps) {
   const [images, setImages] = useState<string[]>([]);
   const [cover, setCover] = useState<string | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
+  // product_id -> pinned serial id (null = auto/cheapest).
+  const [pins, setPins] = useState<Record<number, number | null>>({});
+  // product_id -> in-stock units, loaded lazily for the pin dropdown.
+  const [unitMap, setUnitMap] = useState<Record<number, Serial[]>>({});
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState('');
   const [filterCat, setFilterCat] = useState<number | 'all'>('all');
@@ -74,8 +78,26 @@ export function BundlesView({ showToast }: ViewProps) {
     return m;
   }, [products]);
 
-  const cost = selected.reduce((s, id) => s + (productById.get(id)?.cost_min ?? 0), 0);
-  const listPrice = selected.reduce((s, id) => s + (productById.get(id)?.price_min ?? 0), 0);
+  // Load a product's in-stock units for the pin dropdown (once per product).
+  const loadUnits = useCallback(async (pid: number) => {
+    if (unitMap[pid]) return;
+    try {
+      const { serials } = await fetchProduct(pid);
+      setUnitMap((m) => ({ ...m, [pid]: serials.filter((s) => s.status === 'in_stock') }));
+    } catch { /* ignore */ }
+  }, [unitMap]);
+
+  // Price/cost of a component: the pinned unit when chosen, else the cheapest.
+  const pinnedUnit = (pid: number): Serial | null => {
+    const sid = pins[pid];
+    if (sid == null) return null;
+    return unitMap[pid]?.find((u) => u.id === sid) ?? null;
+  };
+  const priceFor = (pid: number) => pinnedUnit(pid)?.price ?? productById.get(pid)?.price_min ?? 0;
+  const costFor = (pid: number) => pinnedUnit(pid)?.cost ?? productById.get(pid)?.cost_min ?? 0;
+
+  const cost = selected.reduce((s, id) => s + costFor(id), 0);
+  const listPrice = selected.reduce((s, id) => s + priceFor(id), 0);
   const bundlePrice = Math.round(listPrice * (1 - discount / 100));
   const profit = bundlePrice - cost;
   const margin = bundlePrice ? (profit / bundlePrice) * 100 : 0;
@@ -89,7 +111,7 @@ export function BundlesView({ showToast }: ViewProps) {
   const startCreate = () => {
     setEditingId(null); setName(''); setDiscount(5); setWarranty('0'); setWarrantyCustom(false);
     setImages([]); setCover(null);
-    setSelected([]); setQ(''); setFilterCat('all');
+    setSelected([]); setPins({}); setUnitMap({}); setQ(''); setFilterCat('all');
     setMode('edit');
   };
   const startEdit = (b: Bundle) => {
@@ -97,8 +119,24 @@ export function BundlesView({ showToast }: ViewProps) {
     setWarranty(b.warranty_text ?? String(b.warranty_months));
     setWarrantyCustom(!!b.warranty_text || !isPresetWarranty(String(b.warranty_months)));
     setImages(b.images); setCover(b.image_url);
-    setSelected(b.items.map((i) => i.product_id)); setQ(''); setFilterCat('all');
+    setSelected(b.items.map((i) => i.product_id));
+    setPins(Object.fromEntries(b.items.map((i) => [i.product_id, i.serial_id])));
+    setUnitMap({});
+    b.items.forEach((i) => loadUnits(i.product_id)); // so the pin dropdown is ready
+    setQ(''); setFilterCat('all');
     setMode('edit');
+  };
+
+  // Toggle a product in/out of the bundle; load its units when added.
+  const toggleProduct = (pid: number) => {
+    if (selected.includes(pid)) {
+      setSelected((s) => s.filter((x) => x !== pid));
+      setPins((p) => { const { [pid]: _drop, ...rest } = p; return rest; });
+    } else {
+      setSelected((s) => [...s, pid]);
+      setPins((p) => ({ ...p, [pid]: null }));
+      loadUnits(pid);
+    }
   };
 
   const save = async () => {
@@ -107,11 +145,12 @@ export function BundlesView({ showToast }: ViewProps) {
     try {
       const { warranty_months, warranty_text } = resolveWarranty(warranty, warrantyCustom);
       const gallery = { images, image_url: cover };
+      const items = selected.map((id) => ({ product_id: id, serial_id: pins[id] ?? null }));
       if (editingId != null) {
-        await updateBundle(editingId, name.trim(), discount, warranty_months, warranty_text, selected, gallery);
+        await updateBundle(editingId, name.trim(), discount, warranty_months, warranty_text, items, gallery);
         showToast('บันทึกการแก้ไขชุดสินค้าแล้ว');
       } else {
-        await createBundle(name.trim(), discount, warranty_months, warranty_text, selected, gallery);
+        await createBundle(name.trim(), discount, warranty_months, warranty_text, items, gallery);
         showToast('สร้างชุดสินค้าเรียบร้อย');
       }
       setMode('list');
@@ -199,6 +238,9 @@ export function BundlesView({ showToast }: ViewProps) {
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>{b.name}</div>
                   <div className="muted mono" style={{ fontSize: 11.5 }}>{b.items.length} ชิ้น · ขายได้อีก {b.stock} ชุด{b.sold ? ` · ขายไปแล้ว ${b.sold}` : ''}</div>
                   <div className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>รับประกัน: {warrantyDisplay(b.warranty_months, b.warranty_text, SHOP_WARRANTY_30)}</div>
+                  {b.items.some((it) => it.serial_id != null && !it.pinned_ok) && (
+                    <div style={{ fontSize: 11, marginTop: 3, color: 'var(--neg)' }}>⚠ ชิ้นที่ปักหมุดบางชิ้นถูกขายแล้ว — ระบบจะเลือกชิ้นอื่นให้</div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 14 }}>
                     <div>
                       <div className="muted" style={{ fontSize: 11.5 }}>ราคาชุด</div>
@@ -335,7 +377,7 @@ export function BundlesView({ showToast }: ViewProps) {
                 const isSel = selected.includes(p.id);
                 return (
                   <button key={p.id} type="button" className={'product-pick' + (isSel ? ' selected' : '')}
-                    onClick={() => setSelected((s) => (isSel ? s.filter((x) => x !== p.id) : [...s, p.id]))}>
+                    onClick={() => toggleProduct(p.id)}>
                     <Thumb url={null} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 500 }}>{p.name}</div>
@@ -366,15 +408,36 @@ export function BundlesView({ showToast }: ViewProps) {
                   {selected.map((id) => {
                     const p = productById.get(id);
                     if (!p) return null;
+                    const units = unitMap[id];
+                    const pin = pins[id] ?? null;
                     return (
-                      <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
+                      <div key={id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0' }}>
                         <Thumb url={null} />
                         <div style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>
                           <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                          <div className="muted mono" style={{ fontSize: 11 }}>{p.model || '—'}</div>
+                          <select
+                            className="select"
+                            style={{ marginTop: 4, width: '100%', fontSize: 11.5, height: 30, padding: '0 8px' }}
+                            value={pin ?? 'auto'}
+                            onChange={(e) => {
+                              const v = e.target.value === 'auto' ? null : Number(e.target.value);
+                              setPins((prev) => ({ ...prev, [id]: v }));
+                            }}
+                          >
+                            <option value="auto">อัตโนมัติ (ถูกสุด)</option>
+                            {units == null
+                              ? <option disabled>กำลังโหลดชิ้น...</option>
+                              : units.map((u) => <option key={u.id} value={u.id}>{u.serial} · {fmtTHB(u.price)}</option>)}
+                            {/* Pinned unit already sold: keep it selectable so the choice is visible. */}
+                            {pin != null && units != null && !units.some((u) => u.id === pin) && (
+                              <option value={pin}>ชิ้นที่ปักหมุด (ขายแล้ว)</option>
+                            )}
+                          </select>
                         </div>
-                        <div className="num" style={{ fontSize: 12.5 }}>{p.price_min == null ? '—' : fmtTHB(p.price_min)}</div>
-                        <button type="button" className="btn btn-sm btn-icon btn-ghost" onClick={() => setSelected((s) => s.filter((x) => x !== id))}><Icons.x /></button>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                          <button type="button" className="btn btn-sm btn-icon btn-ghost" onClick={() => toggleProduct(id)}><Icons.x /></button>
+                          <div className="num" style={{ fontSize: 12.5 }}>{fmtTHB(priceFor(id))}</div>
+                        </div>
                       </div>
                     );
                   })}

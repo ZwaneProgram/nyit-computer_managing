@@ -7,6 +7,8 @@ interface SaleBody {
   items?: { serial_id: number }[];
   bundle_id?: number;
   bundle_qty?: number;
+  /** Explicit units chosen at checkout (one per component; used when qty = 1). */
+  serials?: number[];
   customer_name?: string | null;
   customer_phone?: string | null;
   customer_address?: string | null;
@@ -129,25 +131,68 @@ export async function saleRoutes(app: FastifyInstance) {
         if (!bundleId) { await client.query('rollback'); return reply.code(400).send({ error: 'ยังไม่ได้เลือกชุดสินค้า' }); }
         const { rows: brow } = await client.query('select id, discount_pct from bundles where id = $1', [bundleId]);
         if (!brow[0]) { await client.query('rollback'); return reply.code(400).send({ error: 'ไม่พบชุดสินค้า' }); }
-        const { rows: comps } = await client.query('select product_id from bundle_items where bundle_id = $1', [bundleId]);
+        const { rows: comps } = await client.query('select product_id, serial_id from bundle_items where bundle_id = $1', [bundleId]);
         if (!comps.length) { await client.query('rollback'); return reply.code(400).send({ error: 'ชุดสินค้านี้ไม่มีสินค้า' }); }
 
-        // Bundle UI overhaul deferred: FIFO-pick setQty in-stock units per component.
+        // Explicit per-component units chosen at checkout (qty = 1 path). When the
+        // client sends them, honor exactly those; otherwise auto-pick per component
+        // (pinned unit first if still in stock, then FIFO).
+        const explicit = Array.isArray(b.serials) ? b.serials.map(Number).filter(Number.isFinite) : [];
         let listTotal = 0, costTotal = 0;
-        for (const c of comps) {
-          const pid = Number(c.product_id);
+
+        if (explicit.length) {
+          if (setQty !== 1) { await client.query('rollback'); return reply.code(400).send({ error: 'เลือกชิ้นเองได้เฉพาะตอนขายทีละชุด' }); }
           const { rows: picks } = await client.query(
-            `select id, price, cost from product_serials
-               where product_id = $1 and status = 'in_stock' order by created_at, id limit $2 for update`,
-            [pid, setQty],
+            `select id, product_id, price, cost, status from product_serials where id = any($1) for update`,
+            [explicit],
           );
-          if (picks.length < setQty) {
-            const { rows: p } = await client.query('select name from products where id = $1', [pid]);
-            await client.query('rollback');
-            return reply.code(409).send({ error: `สต๊อกไม่พอสำหรับ "${p[0]?.name ?? `#${pid}`}" ในชุดสินค้า` });
+          const byId = new Map((picks as Record<string, unknown>[]).map((r) => [Number(r.id), r]));
+          const needed = new Map<number, number>();          // product_id -> count still to cover
+          for (const c of comps) needed.set(Number(c.product_id), (needed.get(Number(c.product_id)) ?? 0) + 1);
+          for (const sid of explicit) {
+            const u = byId.get(sid);
+            if (!u || u.status !== 'in_stock') { await client.query('rollback'); return reply.code(409).send({ error: 'มีชิ้นที่เลือกถูกขายไปแล้ว — รีเฟรชแล้วลองใหม่' }); }
+            const pid = Number(u.product_id);
+            if (!needed.get(pid)) { await client.query('rollback'); return reply.code(400).send({ error: 'ชิ้นที่เลือกไม่ตรงกับสินค้าในชุด' }); }
+            needed.set(pid, needed.get(pid)! - 1);
+            listTotal += num(u.price); costTotal += num(u.cost); soldSerialIds.push(sid);
+            movements.push({ product_id: pid, delta: -1 });
           }
-          for (const pk of picks) { listTotal += num(pk.price); costTotal += num(pk.cost); soldSerialIds.push(Number(pk.id)); }
-          movements.push({ product_id: pid, delta: -setQty });
+          for (const [, n] of needed) {
+            if (n > 0) { await client.query('rollback'); return reply.code(400).send({ error: 'เลือกชิ้นให้ครบทุกสินค้าในชุด' }); }
+          }
+        } else {
+          for (const c of comps) {
+            const pid = Number(c.product_id);
+            const pinId = c.serial_id == null ? null : Number(c.serial_id);
+            const chosen: Record<string, unknown>[] = [];
+            // Prefer the pinned unit when it is still in stock.
+            if (pinId != null) {
+              const { rows: pin } = await client.query(
+                `select id, price, cost from product_serials where id = $1 and status = 'in_stock' for update`,
+                [pinId],
+              );
+              if (pin[0]) chosen.push(pin[0] as Record<string, unknown>);
+            }
+            // Fill the rest FIFO, skipping the pinned unit already taken.
+            const remaining = setQty - chosen.length;
+            if (remaining > 0) {
+              const { rows: picks } = await client.query(
+                `select id, price, cost from product_serials
+                   where product_id = $1 and status = 'in_stock' and id <> all($2)
+                   order by created_at, id limit $3 for update`,
+                [pid, chosen.map((c2) => Number(c2.id)), remaining],
+              );
+              chosen.push(...(picks as Record<string, unknown>[]));
+            }
+            if (chosen.length < setQty) {
+              const { rows: p } = await client.query('select name from products where id = $1', [pid]);
+              await client.query('rollback');
+              return reply.code(409).send({ error: `สต๊อกไม่พอสำหรับ "${p[0]?.name ?? `#${pid}`}" ในชุดสินค้า` });
+            }
+            for (const pk of chosen) { listTotal += num(pk.price); costTotal += num(pk.cost); soldSerialIds.push(Number(pk.id)); }
+            movements.push({ product_id: pid, delta: -setQty });
+          }
         }
         const discounted = Math.round(listTotal * (1 - num(brow[0].discount_pct) / 100));
         lines.push({

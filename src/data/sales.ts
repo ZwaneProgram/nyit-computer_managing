@@ -26,6 +26,8 @@ export interface NewSale {
   items?: { serial_id: number }[];
   bundle_id?: number;
   bundle_qty?: number;
+  /** Explicit units chosen at checkout (one per component; qty = 1 only). */
+  serials?: number[];
   customer_name?: string | null;
   customer_phone?: string | null;
   customer_address?: string | null;
