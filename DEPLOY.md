@@ -119,7 +119,8 @@ ufw allow 3000/tcp
 > isn't reachable from your browser even with ufw allowing 3000, check that.
 
 ### 9. Test it
-From your own PC, open: **`http://<VPS-IP>:3000`**
+From your own PC, open the live URL: **`https://pos.ny-itshop.com`**
+(or the raw `http://<VPS-IP>:3000` if bypassing the proxy).
 You should see the login screen → "create first account" (this becomes the
 **owner**). Done. 🎉
 
@@ -153,17 +154,39 @@ sudo -u postgres pg_dump nyit > /root/nyit-backup-$(date +%F).sql
 
 ---
 
-## Later: move to a clean URL + HTTPS (optional)
-When ready to use a subdomain (e.g. `app.nyit.one`) instead of `:3000`:
-1. Add a DNS **A record** for the subdomain → the VPS IP.
-2. Enable Apache proxy modules: `a2enmod proxy proxy_http && systemctl reload apache2`.
-3. Add an Apache vhost for the subdomain that `ProxyPass` / `ProxyPassReverse`
-   to `http://127.0.0.1:3000/`.
-4. Add HTTPS with certbot: `apt install certbot python3-certbot-apache` then
-   `certbot --apache -d app.nyit.one`.
-5. Set `COOKIE_SECURE=true` in `server/.env` and `pm2 restart nyit-app`.
+## Clean URL + HTTPS — DONE (admin app on https://pos.ny-itshop.com)
+The admin app is served through an Apache reverse-proxy with a Let's Encrypt
+cert, coexisting with the WordPress site `ny-itshop.com` on the **same** Apache
+(name-based vhosts — safe). Recorded here so it can be rebuilt if needed.
 
-(Ask Claude/Codex to generate the exact vhost file when you get here.)
+Steps that were run (2026-07-22):
+1. **Namecheap** ny-itshop.com → Advanced DNS → add **A record**: Host `pos`,
+   Value `194.233.88.142` (IP only, **no port**), TTL Automatic. Left the other
+   site's `@`/`www`/URL-redirect records untouched.
+2. Enable Apache proxy modules:
+   `sudo a2enmod proxy proxy_http proxy_wstunnel && sudo systemctl reload apache2`
+3. Create `/etc/apache2/sites-available/pos.ny-itshop.com.conf`:
+   ```apache
+   <VirtualHost *:80>
+       ServerName pos.ny-itshop.com
+       ProxyPreserveHost On
+       ProxyPass        / http://127.0.0.1:3000/
+       ProxyPassReverse / http://127.0.0.1:3000/
+       ErrorLog  ${APACHE_LOG_DIR}/pos-error.log
+       CustomLog ${APACHE_LOG_DIR}/pos-access.log combined
+   </VirtualHost>
+   ```
+   Then: `sudo a2ensite pos.ny-itshop.com.conf && sudo apache2ctl configtest && sudo systemctl reload apache2`
+4. HTTPS with certbot (auto-renews, adds HTTP→HTTPS redirect):
+   `sudo apt install certbot python3-certbot-apache -y`
+   `sudo certbot --apache -d pos.ny-itshop.com`  (choose "Redirect")
+5. Set `COOKIE_SECURE=true` in `server/.env` and `pm2 restart nyit-app`
+   (required now that cookies go over HTTPS).
+
+### Storefront subdomain (later)
+Same recipe: A record `shop` → same IP, copy the vhost with
+`ServerName shop.ny-itshop.com` and port **`3001`**, then
+`certbot --apache -d shop.ny-itshop.com`.
 
 ---
 
