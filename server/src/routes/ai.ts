@@ -305,9 +305,13 @@ async function scrapeJib(
 // Responses API with the web_search tool so the model actually searches
 // manufacturer + Thai retailer pages before answering — real research, not
 // training-data guesses. Config via env: MAXPLUS_API_KEY, MAXPLUS_BASE_URL,
-// MAXPLUS_TEXT_MODEL (default gpt-5.4).
+// MAXPLUS_TEXT_MODEL (default gpt-5.5).
+//
+// 2026-08-12: MaxPlus retired gpt-5.4. Its /v1/models now serves gpt-5.5,
+// gpt-5.6-sol and gpt-5.6-terra, so the default moved to gpt-5.5 — asking for
+// a retired model is what made this endpoint 502.
 const MAXPLUS_BASE = () => (process.env.MAXPLUS_BASE_URL ?? 'https://api.maxplus-ai.cc').replace(/\/+$/, '');
-const MAXPLUS_TEXT_MODEL = () => process.env.MAXPLUS_TEXT_MODEL ?? 'gpt-5.4';
+const MAXPLUS_TEXT_MODEL = () => process.env.MAXPLUS_TEXT_MODEL ?? 'gpt-5.5';
 
 // Pull the assistant's text out of a Responses-API reply (skips reasoning +
 // web_search_call items). Falls back to the SDK-style output_text convenience field.
@@ -554,13 +558,12 @@ ${fieldList}
         signal: AbortSignal.timeout(120_000),
       });
 
-      if (!oaRes.ok) {
-        const errData = (await oaRes.json().catch(() => ({}))) as Record<string, unknown>;
-        const msg = ((errData.error as Record<string, unknown> | undefined)?.message as string) ?? `HTTP ${oaRes.status}`;
-        return reply.code(502).send({ error: `Image API: ${msg}` });
-      }
+      // Parse once: a MaxPlus failure can arrive inside a 200 body (see imageApiError).
+      const oaData = (await oaRes.json().catch(() => ({}))) as
+        Record<string, unknown> & { data?: Array<{ b64_json?: string; url?: string }> };
+      const apiErr = imageApiError(oaRes.status, oaData);
+      if (apiErr) return reply.code(502).send({ error: apiErr });
 
-      const oaData = (await oaRes.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
       const item = oaData.data?.[0];
       if (!item) return reply.code(502).send({ error: 'AI ไม่สร้างรูปภาพ' });
 
@@ -591,7 +594,7 @@ ${fieldList}
       return { imageUrl: `/uploads/ai-images/${filename}`, prompt };
     } catch (err) {
       app.log.error(err);
-      return reply.code(502).send({ error: (err as Error).message || 'สร้างรูปภาพไม่สำเร็จ' });
+      return reply.code(502).send({ error: friendlyImageError(err) });
     }
   });
 
@@ -710,7 +713,7 @@ ${fieldList}
       return { imageUrl: `/uploads/ai-images/${filename}` };
     } catch (err) {
       app.log.error(err);
-      return reply.code(502).send({ error: (err as Error).message || 'สร้างโปสเตอร์ไม่สำเร็จ' });
+      return reply.code(502).send({ error: friendlyImageError(err) });
     }
   });
 
@@ -953,6 +956,36 @@ const DEFAULT_THEME: CategoryTheme = {
   typeLabel: 'COMPUTER HARDWARE',
 };
 
+// ---------- image API response handling ----------
+// MaxPlus answers /v1/images/generations with HTTP 200 headers *immediately*,
+// then holds the connection open padding the body with spaces while the picture
+// renders, and only writes the real JSON at the very end. A failure therefore
+// arrives as an `error` object inside a 200 body, so `res.ok` alone cannot tell
+// success from failure. Always parse the payload and inspect it.
+// (Verified 2026-08-12 against api.maxplus-ai.cc.)
+function imageApiError(status: number, data: Record<string, unknown>): string | null {
+  const err = data.error as Record<string, unknown> | undefined;
+  if (err) {
+    const msg = (err.message as string) || String(err.type ?? 'unknown error');
+    return /timeout|took too long/i.test(msg)
+      ? 'ระบบสร้างรูปภาพ AI ใช้เวลานานเกินไปจนหมดเวลา (ฝั่งผู้ให้บริการ) กรุณาลองใหม่ภายหลัง'
+      : `Image API: ${msg}`;
+  }
+  if (status < 200 || status >= 300) return `Image API: HTTP ${status}`;
+  return null;
+}
+
+// Node's AbortSignal.timeout rejects with a bare English "The operation was
+// aborted due to timeout", which is what the shop owner used to see in a toast.
+// Turn any abort/timeout into the same Thai wording the API's own timeout uses.
+function friendlyImageError(err: unknown): string {
+  const e = err as { name?: string; message?: string };
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError' || /aborted|timeout/i.test(e?.message ?? '')) {
+    return 'ระบบสร้างรูปภาพ AI ใช้เวลานานเกินไปจนหมดเวลา (ฝั่งผู้ให้บริการ) กรุณาลองใหม่ภายหลัง';
+  }
+  return e?.message || 'สร้างรูปภาพไม่สำเร็จ';
+}
+
 // Sniff image MIME type from magic bytes to build a correct data URI.
 function sniffImageMime(buf: Buffer): string {
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
@@ -972,12 +1005,11 @@ async function requestAiImageBuffer(prompt: string): Promise<Buffer> {
     body: JSON.stringify({ model: imgModel, prompt, n: 1, size: '1024x1024', quality: 'high' }),
     signal: AbortSignal.timeout(120_000),
   });
-  if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    const msg = ((err.error as Record<string, unknown> | undefined)?.message as string) ?? `HTTP ${res.status}`;
-    throw new Error(`Image API: ${msg}`);
-  }
-  const data = (await res.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
+  // Parse once: a MaxPlus failure can arrive inside a 200 body (see imageApiError).
+  const data = (await res.json().catch(() => ({}))) as
+    Record<string, unknown> & { data?: Array<{ b64_json?: string; url?: string }> };
+  const apiErr = imageApiError(res.status, data);
+  if (apiErr) throw new Error(apiErr);
   const item = data.data?.[0];
   if (item?.b64_json) return Buffer.from(item.b64_json, 'base64');
   if (item?.url) {
