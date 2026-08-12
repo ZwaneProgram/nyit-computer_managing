@@ -131,15 +131,52 @@ You should see the login screen → "create first account" (this becomes the
 On your PC: commit + `git push`. Then on the VPS:
 ```bash
 cd /opt/nyit-app
-git pull
-npm install                 # only if package.json changed
+git fetch origin && git reset --hard origin/main
+npm ci                      # only if package.json changed (ci, NOT install)
 npm run build               # only if the frontend changed
-cd server && npm install    # only if server deps changed
+cd server && npm ci         # only if server deps changed
 npm run migrate             # only if the DB schema changed (safe/idempotent)
 pm2 restart nyit-app
 ```
-Your database, uploaded images (`server/uploads/`), and `.env` are never touched
-by `git pull` — they live outside git.
+Your database, uploaded images (`server/uploads/`), and `.env` are never touched —
+they live outside git.
+
+### Why `reset --hard` and not `git pull`
+
+**Always force.** The VPS accumulates changes to tracked auto-generated files
+(`package-lock.json` from `npm install`, `next-env.d.ts` from `next build`,
+`*.tsbuildinfo`), so `git pull` aborts with *"local changes would be overwritten
+by merge"*. The failure is silent in practice: you don't read the abort, the
+build then **rebuilds the old commit**, `pm2 restart` relaunches it, and the site
+looks deployed but isn't. This has bitten us three times (2026-07-07, 2026-07-22,
+2026-08-12 — the storefront sat 4 commits behind for weeks).
+
+Forcing is safe here: nobody authors code on the VPS, and `.env` / `.env.local` /
+`server/uploads/` are gitignored, so `reset --hard` cannot touch them.
+
+Two rules that go with it:
+- **`npm ci`, never `npm install`,** on the VPS — `ci` installs straight from the
+  lockfile and never rewrites it, which removes the main source of churn.
+- **Chain build and restart with `&&`** (`npm run build && pm2 restart nyit-app`).
+  A failed build leaves the previous `dist/` in place, so an unconditional restart
+  silently re-ships stale code.
+- `git fetch` **must** precede `reset --hard origin/main` — without it you reset to
+  a stale local `origin/main` and rebuild old code anyway (that was the 2026-07-07 bug).
+
+### Storefront (`nyitfront` — separate repo)
+
+`store.ny-itshop.com` is a **different app in a different repo**
+(`github.com/CheerRock7/nyitfront`), so the commands above do nothing for it:
+```bash
+cd /var/www/nyitfront
+git fetch origin && git reset --hard origin/main
+npm ci
+npm run build && pm2 reload nyitfront
+```
+
+**Verifying a deploy actually landed:** grep the live HTML for a string that exists
+*only* in the new code and compare with the local repo. Pick carefully — testing a
+string that also exists in older commits gives a false pass.
 
 ---
 
