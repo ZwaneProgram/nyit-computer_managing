@@ -12,6 +12,7 @@ import {
 import { fetchBundles, type Bundle } from '../data/bundles';
 import { useUnitMatches } from '../hooks/useUnitMatches';
 import { generatePost, formatPost, postToFacebook, generateProductImage } from '../data/aiPost';
+import { AI_IMAGE_GEN_ENABLED } from '../lib/features';
 
 interface ViewProps {
   showToast: (msg: string) => void;
@@ -247,7 +248,7 @@ export function GeneratePostView({ showToast }: ViewProps) {
             <button className="btn btn-primary" onClick={generate} disabled={!canGenerate || generating}>
               {generating ? <>กำลังสร้างโพสต์...</> : <>✨ สร้างโพสต์ขาย</>}
             </button>
-            {mode === 'single' && (
+            {AI_IMAGE_GEN_ENABLED && mode === 'single' && (
               <button
                 className="btn btn-ghost"
                 onClick={generateImage}
@@ -263,7 +264,7 @@ export function GeneratePostView({ showToast }: ViewProps) {
         {/* ---- right: result ---- */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
         {/* generated image */}
-        {(generatedImageUrl || generatingImage) && (
+        {AI_IMAGE_GEN_ENABLED && (generatedImageUrl || generatingImage) && (
           <div className="card card-pad">
             <h3 style={{ marginBottom: 12 }}>รูปภาพโฆษณา AI</h3>
             {generatingImage ? (

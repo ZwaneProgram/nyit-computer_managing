@@ -8,6 +8,7 @@ import { query } from '../db';
 import { requireAuth } from '../auth';
 import { renderHtmlToPng } from '../lib/renderHtmlToPng';
 import { buildBundlePosterHtml, type PosterSpecRow } from '../lib/bundlePosterTemplate';
+import { AI_IMAGE_GEN_ENABLED, FEATURE_DISABLED } from '../lib/features';
 
 const AI_IMAGE_DIR = fileURLToPath(new URL('../../uploads/ai-images', import.meta.url));
 
@@ -500,6 +501,7 @@ ${fieldList}
   // matching the N.Y. ITSHOP house style, saves the result to uploads/ai-images/,
   // and returns the URL. Requires OPENAI_API_KEY in server/.env.
   app.post('/api/ai/generate-product-image', { preHandler: requireAuth() }, async (req, reply) => {
+    if (!AI_IMAGE_GEN_ENABLED) return reply.code(503).send(FEATURE_DISABLED);
     if (!process.env.IMAGE_API_KEY && !process.env.OPENAI_API_KEY) {
       return reply.code(503).send({ error: 'ยังไม่ได้ตั้งค่า IMAGE_API_KEY ใน server/.env' });
     }
@@ -600,6 +602,7 @@ ${fieldList}
 
   // GET /api/ai/images?productId=X — stored AI images for a product, newest first.
   app.get('/api/ai/images', { preHandler: requireAuth() }, async (req, reply) => {
+    if (!AI_IMAGE_GEN_ENABLED) return reply.code(503).send(FEATURE_DISABLED);
     const productId = Number((req.query as { productId?: string }).productId);
     if (!Number.isInteger(productId) || productId <= 0) {
       return reply.code(400).send({ error: 'productId ไม่ถูกต้อง' });
@@ -613,6 +616,7 @@ ${fieldList}
 
   // DELETE /api/ai/images/:id — remove one image from the library and its file.
   app.delete('/api/ai/images/:id', { preHandler: requireAuth() }, async (req, reply) => {
+    if (!AI_IMAGE_GEN_ENABLED) return reply.code(503).send(FEATURE_DISABLED);
     const id = Number((req.params as { id?: string }).id);
     if (!Number.isInteger(id) || id <= 0) {
       return reply.code(400).send({ error: 'id ไม่ถูกต้อง' });
@@ -634,6 +638,7 @@ ${fieldList}
   // only the PC photo. Returns the poster URL; the client adds it to the bundle
   // gallery and saves the bundle to persist it.
   app.post('/api/ai/generate-bundle-poster', { preHandler: requireAuth() }, async (req, reply) => {
+    if (!AI_IMAGE_GEN_ENABLED) return reply.code(503).send(FEATURE_DISABLED);
     if (!process.env.IMAGE_API_KEY && !process.env.OPENAI_API_KEY) {
       return reply.code(503).send({ error: 'ยังไม่ได้ตั้งค่า IMAGE_API_KEY ใน server/.env' });
     }

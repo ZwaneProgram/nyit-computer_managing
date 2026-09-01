@@ -7,6 +7,7 @@ import { ImageManager } from '../components/ImageManager';
 import { BUNDLE_WARRANTY_PRESETS, isPresetWarranty, warrantyDisplay, resolveWarranty, SHOP_WARRANTY_30 } from '../data/warranty';
 import { ApiError } from '../lib/api';
 import { generateBundlePoster } from '../data/aiPost';
+import { AI_IMAGE_GEN_ENABLED } from '../lib/features';
 
 interface ViewProps {
   showToast: (msg: string) => void;
@@ -320,7 +321,7 @@ export function BundlesView({ showToast }: ViewProps) {
                 onChange={(g) => { setImages(g.images); setCover(g.cover); }}
                 onError={showToast}
               />
-              {editingId != null && (
+              {AI_IMAGE_GEN_ENABLED && editingId != null && (
                 <div style={{ marginTop: 10 }}>
                   {!posterOpen ? (
                     <button type="button" className="btn btn-sm imgman-ai-btn" onClick={openPoster}>

@@ -8,6 +8,7 @@ import { CameraCapture } from './CameraCapture';
 import { ImageLightbox } from './ImageLightbox';
 import { uploadImage } from '../data/inventory';
 import { listProductAiImages, deleteAiImage, type AiImage } from '../data/aiPost';
+import { AI_IMAGE_GEN_ENABLED } from '../lib/features';
 
 export interface Gallery {
   images: string[];
@@ -130,14 +131,14 @@ export function ImageManager({ value, onChange, onError, max = 8, productId }: {
           onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }}
         />
         <CameraCapture onCapture={(f) => addFiles([f])} onError={onError} disabled={full} />
-        {productId != null && (
+        {AI_IMAGE_GEN_ENABLED && productId != null && (
           <button type="button" className="btn btn-sm imgman-ai-btn" disabled={full} onClick={openPicker}>
             ✨ เลือกจากรูป AI
           </button>
         )}
         <span className="imgman-count">{images.length}/{max}</span>
       </div>
-      {pickerOpen && (
+      {AI_IMAGE_GEN_ENABLED && pickerOpen && (
         <div className="imgman-picker">
           <div className="imgman-picker-head">
             <span className="imgman-picker-title">🎨 รูปที่ AI สร้างไว้</span>
