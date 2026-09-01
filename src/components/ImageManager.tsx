@@ -5,6 +5,7 @@
 import { useRef, useState } from 'react';
 import { Icons } from './Icons';
 import { CameraCapture } from './CameraCapture';
+import { ImageLightbox } from './ImageLightbox';
 import { uploadImage } from '../data/inventory';
 import { listProductAiImages, deleteAiImage, type AiImage } from '../data/aiPost';
 
@@ -27,6 +28,11 @@ export function ImageManager({ value, onChange, onError, max = 8, productId }: {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [aiImages, setAiImages] = useState<AiImage[]>([]);
   const [loadingAi, setLoadingAi] = useState(false);
+
+  // Full-screen viewer. Only the source list + position are kept so a delete or
+  // reorder underneath keeps the viewer in sync instead of showing a stale URL.
+  const [zoom, setZoom] = useState<{ src: 'gallery' | 'ai'; index: number } | null>(null);
+  const zoomImages = zoom ? (zoom.src === 'gallery' ? images : aiImages.map((a) => a.url)) : [];
 
   const openPicker = async () => {
     if (!productId) return;
@@ -92,6 +98,13 @@ export function ImageManager({ value, onChange, onError, max = 8, productId }: {
             <div key={url} className={'imgman-item' + (cover === url ? ' is-cover' : '')}>
               <div className="imgman-thumb">
                 <img src={url} alt="" />
+                <button
+                  type="button"
+                  className="imgman-zoom"
+                  title="ดูรูปขนาดใหญ่"
+                  aria-label="ดูรูปขนาดใหญ่"
+                  onClick={() => setZoom({ src: 'gallery', index: i })}
+                />
                 {cover === url && <span className="imgman-badge"><Icons.star /> ปก</span>}
                 <button type="button" className="imgman-del" title="ลบรูป" aria-label="ลบรูป" onClick={() => remove(url)}><Icons.trash /></button>
                 <div className="imgman-bar">
@@ -141,13 +154,20 @@ export function ImageManager({ value, onChange, onError, max = 8, productId }: {
               </div>
             ) : (
               <div className="imgman-grid">
-                {aiImages.map((img) => {
+                {aiImages.map((img, ai) => {
                   const added = images.includes(img.url);
                   return (
                     <div key={img.id} className={'imgman-item' + (added ? ' is-added' : '')}>
                       <div className="imgman-thumb">
                         <img src={img.url} alt="" />
-                        {added && <span className="imgman-badge imgman-badge-ok"><Icons.check /> เพิ่มแล้ว</span>}
+                        <button
+                          type="button"
+                          className="imgman-zoom"
+                          title="ดูรูปขนาดใหญ่"
+                          aria-label="ดูรูปขนาดใหญ่"
+                          onClick={() => setZoom({ src: 'ai', index: ai })}
+                        />
+                        {added &&<span className="imgman-badge imgman-badge-ok"><Icons.check /> เพิ่มแล้ว</span>}
                         <button type="button" className="imgman-del" title="ลบออกจากคลัง" aria-label="ลบออกจากคลัง" onClick={() => removeFromLibrary(img)}><Icons.trash /></button>
                         <div className="imgman-bar">
                           <button type="button" className="imgman-use" disabled={added || full} onClick={() => addFromLibrary(img.url)}>
@@ -162,6 +182,14 @@ export function ImageManager({ value, onChange, onError, max = 8, productId }: {
             )}
           </div>
         </div>
+      )}
+      {zoom && zoomImages.length > 0 && (
+        <ImageLightbox
+          images={zoomImages}
+          index={Math.min(zoom.index, zoomImages.length - 1)}
+          onIndexChange={(index) => setZoom({ ...zoom, index })}
+          onClose={() => setZoom(null)}
+        />
       )}
     </div>
   );
