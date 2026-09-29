@@ -1,10 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { pool, query } from '../db';
 import { requireAuth } from '../auth';
+import { cleanPct, cleanThb } from '../lib/bundlePrice';
+import { buildRankSql } from '../lib/buildOrder';
 
 interface BundleBody {
   name?: string;
   discount_pct?: number;
+  /** Flat baht off each set (used instead of discount_pct). */
+  discount_thb?: number;
+  /** Flat baht assembly fee added to each set. */
+  assembly_fee?: number;
   warranty_months?: number;
   warranty_text?: string | null;
   /** Components with an optional pinned unit. Preferred over product_ids. */
@@ -91,18 +97,20 @@ async function itemsByBundle(): Promise<Map<string, unknown[]>> {
   // Per-item inventory: when a specific unit is pinned AND still in stock, that
   // unit's price/cost/sku represent the component; otherwise fall back to the
   // cheapest in-stock unit. pinned_ok tells the UI whether the pin still holds.
+  // image_url: the pinned unit's photo, else the cheapest in-stock unit's photo.
   const { rows } = await query(
     `select bi.bundle_id, p.id as product_id, p.name,
             bi.serial_id,
             pin.serial as pinned_serial,
             (pin.id is not null and pin.status = 'in_stock') as pinned_ok,
             case when pin.status = 'in_stock' then pin.sku else null end as sku,
-            null::text as image_url,
+            case when pin.status = 'in_stock' and pin.image_url is not null then pin.image_url else ph.image_url end as image_url,
             coalesce(s.in_stock, 0)::int as stock,
             case when pin.status = 'in_stock' then pin.price else coalesce(s.price_min, 0) end as price,
             case when pin.status = 'in_stock' then pin.cost  else coalesce(s.cost_min, 0)  end as cost
        from bundle_items bi
        join products p on p.id = bi.product_id
+       left join categories c on c.id = p.category_id
        left join product_serials pin on pin.id = bi.serial_id
        left join (
          select product_id,
@@ -111,7 +119,12 @@ async function itemsByBundle(): Promise<Map<string, unknown[]>> {
                 min(cost)  filter (where status = 'in_stock') as cost_min
            from product_serials group by product_id
        ) s on s.product_id = p.id
-      order by p.name`,
+       left join lateral (
+         select image_url from product_serials
+          where product_id = p.id and status = 'in_stock' and image_url is not null
+          order by price, id limit 1
+       ) ph on true
+      order by ${buildRankSql('c.slug')}, p.name`,
   );
   const map = new Map<string, unknown[]>();
   for (const r of rows as Record<string, unknown>[]) {
@@ -160,8 +173,8 @@ export async function bundleRoutes(app: FastifyInstance) {
       const items = await validatePins(client, comps);
       const g = cleanGallery(b.images, b.image_url);
       const { rows } = await client.query(
-        'insert into bundles (name, discount_pct, warranty_months, warranty_text, images, image_url, created_by) values ($1, $2, $3, $4, $5::jsonb, $6, $7) returning *',
-        [b.name.trim(), b.discount_pct ?? 0, cleanWarranty(b.warranty_months), cleanWarrantyText(b.warranty_text), JSON.stringify(g.images), g.cover, req.user!.id],
+        'insert into bundles (name, discount_pct, discount_thb, assembly_fee, warranty_months, warranty_text, images, image_url, created_by) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9) returning *',
+        [b.name.trim(), cleanPct(b.discount_pct), cleanThb(b.discount_thb), cleanThb(b.assembly_fee), cleanWarranty(b.warranty_months), cleanWarrantyText(b.warranty_text), JSON.stringify(g.images), g.cover, req.user!.id],
       );
       const bundle = rows[0];
       for (const it of items) {
@@ -193,8 +206,8 @@ export async function bundleRoutes(app: FastifyInstance) {
       const items = await validatePins(client, comps);
       const g = cleanGallery(b.images, b.image_url);
       const { rows } = await client.query(
-        'update bundles set name = $1, discount_pct = $2, warranty_months = $3, warranty_text = $4, images = $5::jsonb, image_url = $6 where id = $7 returning *',
-        [b.name.trim(), b.discount_pct ?? 0, cleanWarranty(b.warranty_months), cleanWarrantyText(b.warranty_text), JSON.stringify(g.images), g.cover, id],
+        'update bundles set name = $1, discount_pct = $2, discount_thb = $3, assembly_fee = $4, warranty_months = $5, warranty_text = $6, images = $7::jsonb, image_url = $8 where id = $9 returning *',
+        [b.name.trim(), cleanPct(b.discount_pct), cleanThb(b.discount_thb), cleanThb(b.assembly_fee), cleanWarranty(b.warranty_months), cleanWarrantyText(b.warranty_text), JSON.stringify(g.images), g.cover, id],
       );
       if (!rows[0]) {
         await client.query('rollback');

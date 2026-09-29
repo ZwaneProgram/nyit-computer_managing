@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { pool, query } from '../db';
 import { requireAuth } from '../auth';
+import { bundlePrice } from '../lib/bundlePrice';
 
 interface SaleBody {
   kind?: 'item' | 'bundle';
@@ -129,7 +130,7 @@ export async function saleRoutes(app: FastifyInstance) {
         const bundleId = Number(b.bundle_id);
         const setQty = Math.max(1, Number(b.bundle_qty) || 1);
         if (!bundleId) { await client.query('rollback'); return reply.code(400).send({ error: 'ยังไม่ได้เลือกชุดสินค้า' }); }
-        const { rows: brow } = await client.query('select id, discount_pct from bundles where id = $1', [bundleId]);
+        const { rows: brow } = await client.query('select id, discount_pct, discount_thb, assembly_fee from bundles where id = $1', [bundleId]);
         if (!brow[0]) { await client.query('rollback'); return reply.code(400).send({ error: 'ไม่พบชุดสินค้า' }); }
         const { rows: comps } = await client.query('select product_id, serial_id from bundle_items where bundle_id = $1', [bundleId]);
         if (!comps.length) { await client.query('rollback'); return reply.code(400).send({ error: 'ชุดสินค้านี้ไม่มีสินค้า' }); }
@@ -194,7 +195,8 @@ export async function saleRoutes(app: FastifyInstance) {
             movements.push({ product_id: pid, delta: -setQty });
           }
         }
-        const discounted = Math.round(listTotal * (1 - num(brow[0].discount_pct) / 100));
+        // listTotal covers every set, so the per-set baht discount and fee are multiplied by setQty.
+        const discounted = bundlePrice(listTotal, num(brow[0].discount_pct), num(brow[0].discount_thb) * setQty, num(brow[0].assembly_fee) * setQty);
         lines.push({
           product_id: null, bundle_id: bundleId, qty: setQty,
           unit_price: Math.round(discounted / setQty), unit_cost: Math.round(costTotal / setQty),

@@ -28,6 +28,8 @@ export interface Serial {
   /** Ordered image gallery. */
   images: string[];
   sale_id: number | null;
+  /** Day the shop bought this unit, YYYY-MM-DD. */
+  purchased_at: string;
   created_at: string;
 }
 
@@ -48,15 +50,19 @@ export interface Product {
   stock: number;
   /** Derived: count of draft units. */
   draft_count: number;
-  /** When a date filter is active: how many units were added in that range. */
+  /** When a date filter is active: how many units were bought in that range. */
   added_in_range: number;
   /** Price range of in-stock units (null when none). */
   price_min: number | null;
   price_max: number | null;
   /** Cheapest in-stock unit's cost (null when none) — representative cost. */
   cost_min: number | null;
+  /** Most expensive in-stock unit's cost (null when none). */
+  cost_max: number | null;
   /** Sum of in-stock units' cost. */
   stock_cost: number;
+  /** Photo of the cheapest in-stock unit that has one (null when none). */
+  image_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -74,6 +80,8 @@ export interface UnitInput {
   image_url: string | null;
   /** Ordered image gallery. */
   images: string[];
+  /** YYYY-MM-DD; empty = today (create) / unchanged (edit). */
+  purchased_at: string | null;
   draft: boolean;
 }
 
@@ -113,7 +121,9 @@ function normProduct(r: Record<string, unknown>): Product {
     price_min: r.price_min == null ? null : n(r.price_min),
     price_max: r.price_max == null ? null : n(r.price_max),
     cost_min: r.cost_min == null ? null : n(r.cost_min),
+    cost_max: r.cost_max == null ? null : n(r.cost_max),
     stock_cost: n(r.stock_cost),
+    image_url: (r.image_url as string) ?? null,
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
   };
@@ -133,6 +143,7 @@ function normSerial(r: Record<string, unknown>): Serial {
     image_url: (r.image_url as string) ?? null,
     images: Array.isArray(r.images) ? (r.images as string[]) : [],
     sale_id: r.sale_id == null ? null : Number(r.sale_id),
+    purchased_at: (r.purchased_at as string) ?? '',
     created_at: r.created_at as string,
   };
 }

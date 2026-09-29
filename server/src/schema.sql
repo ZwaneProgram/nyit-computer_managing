@@ -263,6 +263,24 @@ update product_serials
    set images = jsonb_build_array(image_url)
  where image_url is not null and (images is null or images = '[]'::jsonb);
 
+-- Purchase date (added 2026-09-29): the day the shop bought the unit, chosen by
+-- the user (defaults to today, Bangkok). Existing units are backfilled from the
+-- Bangkok date they were entered. Idempotent.
+alter table product_serials add column if not exists purchased_at date;
+update product_serials
+   set purchased_at = (created_at at time zone 'Asia/Bangkok')::date
+ where purchased_at is null;
+alter table product_serials alter column purchased_at set default ((now() at time zone 'Asia/Bangkok')::date);
+alter table product_serials alter column purchased_at set not null;
+
+-- Bundle baht discount (added 2026-09-29): a flat amount off each set, used
+-- instead of discount_pct (the form sets one, the other stays 0). Idempotent.
+alter table bundles add column if not exists discount_thb numeric(12,2) not null default 0;
+
+-- Bundle assembly fee (added 2026-09-29): flat baht added to each set after the
+-- discount (labour — no cost, so it is all profit). Idempotent.
+alter table bundles add column if not exists assembly_fee numeric(12,2) not null default 0;
+
 -- AI image library (added 2026-07-15): every image produced by
 -- POST /api/ai/generate-product-image is recorded here, keyed to the product it
 -- was generated for, so it can be picked later when managing a unit's gallery.

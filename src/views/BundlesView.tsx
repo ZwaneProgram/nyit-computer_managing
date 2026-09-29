@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icons } from '../components/Icons';
 import { fmtTHB } from '../data/format';
 import { fetchCategories, fetchProduct, fetchProducts, type Category, type Product, type Serial } from '../data/inventory';
-import { createBundle, deleteBundle, fetchBundles, updateBundle, type Bundle } from '../data/bundles';
+import { buildRank, bundlePrice as priceAfterDiscount, createBundle, deleteBundle, fetchBundles, updateBundle, type Bundle } from '../data/bundles';
 import { ImageManager } from '../components/ImageManager';
 import { BUNDLE_WARRANTY_PRESETS, isPresetWarranty, warrantyDisplay, resolveWarranty, SHOP_WARRANTY_30 } from '../data/warranty';
 import { ApiError } from '../lib/api';
@@ -35,7 +35,11 @@ export function BundlesView({ showToast }: ViewProps) {
   // edit/create form
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState('');
-  const [discount, setDiscount] = useState(5);
+  // Bundle discount: percent (slider) or flat baht; only the active one is saved.
+  const [discountMode, setDiscountMode] = useState<'pct' | 'thb'>('pct');
+  const [discount, setDiscount] = useState(0);
+  const [discountThb, setDiscountThb] = useState(0);
+  const [assemblyFee, setAssemblyFee] = useState(0);
   const [warranty, setWarranty] = useState('0');
   const [warrantyCustom, setWarrantyCustom] = useState(false);
   const [images, setImages] = useState<string[]>([]);
@@ -99,7 +103,9 @@ export function BundlesView({ showToast }: ViewProps) {
 
   const cost = selected.reduce((s, id) => s + costFor(id), 0);
   const listPrice = selected.reduce((s, id) => s + priceFor(id), 0);
-  const bundlePrice = Math.round(listPrice * (1 - discount / 100));
+  const activeDiscount = { discount_pct: discountMode === 'pct' ? discount : 0, discount_thb: discountMode === 'thb' ? discountThb : 0, assembly_fee: assemblyFee };
+  const discountAmount = listPrice - priceAfterDiscount(listPrice, activeDiscount.discount_pct, activeDiscount.discount_thb);
+  const bundlePrice = priceAfterDiscount(listPrice, activeDiscount.discount_pct, activeDiscount.discount_thb, assemblyFee);
   const profit = bundlePrice - cost;
   const margin = bundlePrice ? (profit / bundlePrice) * 100 : 0;
 
@@ -110,13 +116,14 @@ export function BundlesView({ showToast }: ViewProps) {
   });
 
   const startCreate = () => {
-    setEditingId(null); setName(''); setDiscount(5); setWarranty('0'); setWarrantyCustom(false);
+    setEditingId(null); setName(''); setDiscountMode('pct'); setDiscount(0); setDiscountThb(0); setAssemblyFee(0); setWarranty('0'); setWarrantyCustom(false);
     setImages([]); setCover(null);
     setSelected([]); setPins({}); setUnitMap({}); setQ(''); setFilterCat('all');
     setMode('edit');
   };
   const startEdit = (b: Bundle) => {
-    setEditingId(b.id); setName(b.name); setDiscount(b.discount_pct);
+    setEditingId(b.id); setName(b.name);
+    setDiscountMode(b.discount_thb > 0 ? 'thb' : 'pct'); setDiscount(b.discount_pct); setDiscountThb(b.discount_thb); setAssemblyFee(b.assembly_fee);
     setWarranty(b.warranty_text ?? String(b.warranty_months));
     setWarrantyCustom(!!b.warranty_text || !isPresetWarranty(String(b.warranty_months)));
     setImages(b.images); setCover(b.image_url);
@@ -148,10 +155,10 @@ export function BundlesView({ showToast }: ViewProps) {
       const gallery = { images, image_url: cover };
       const items = selected.map((id) => ({ product_id: id, serial_id: pins[id] ?? null }));
       if (editingId != null) {
-        await updateBundle(editingId, name.trim(), discount, warranty_months, warranty_text, items, gallery);
+        await updateBundle(editingId, name.trim(), activeDiscount, warranty_months, warranty_text, items, gallery);
         showToast('บันทึกการแก้ไขชุดสินค้าแล้ว');
       } else {
-        await createBundle(name.trim(), discount, warranty_months, warranty_text, items, gallery);
+        await createBundle(name.trim(), activeDiscount, warranty_months, warranty_text, items, gallery);
         showToast('สร้างชุดสินค้าเรียบร้อย');
       }
       setMode('list');
@@ -176,7 +183,7 @@ export function BundlesView({ showToast }: ViewProps) {
 
   const openPoster = () => {
     // Pre-fill with the auto-calculated price (component list price minus discount).
-    const computed = Math.round(listPrice * (1 - discount / 100));
+    const computed = bundlePrice;
     setPosterPrice(computed > 0 ? String(computed) : '');
     setPosterOpen(true);
   };
@@ -246,6 +253,10 @@ export function BundlesView({ showToast }: ViewProps) {
                     <div>
                       <div className="muted" style={{ fontSize: 11.5 }}>ราคาชุด</div>
                       <div className="num" style={{ fontSize: 19, fontWeight: 600, marginTop: 2 }}>{fmtTHB(b.price)}</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div className="muted" style={{ fontSize: 11.5 }}>ค่าประกอบ</div>
+                      <div className="num" style={{ fontSize: 14, fontWeight: 600, marginTop: 2, color: b.assembly_fee > 0 ? 'var(--ink)' : 'var(--ink-3)' }}>{b.assembly_fee > 0 ? `+${fmtTHB(b.assembly_fee)}` : '—'}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div className="muted" style={{ fontSize: 11.5 }}>กำไร</div>
@@ -379,7 +390,7 @@ export function BundlesView({ showToast }: ViewProps) {
                 return (
                   <button key={p.id} type="button" className={'product-pick' + (isSel ? ' selected' : '')}
                     onClick={() => toggleProduct(p.id)}>
-                    <Thumb url={null} />
+                    <Thumb url={p.image_url} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 500 }}>{p.name}</div>
                       <div className="muted mono" style={{ fontSize: 11.5, marginTop: 1 }}>{p.model || '—'} · คงเหลือ {p.stock}</div>
@@ -406,14 +417,17 @@ export function BundlesView({ showToast }: ViewProps) {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
-                  {selected.map((id) => {
+                  {[...selected]
+                    .sort((a, z) => buildRank(productById.get(a)?.category_slug) - buildRank(productById.get(z)?.category_slug)
+                      || (productById.get(a)?.name ?? '').localeCompare(productById.get(z)?.name ?? ''))
+                    .map((id) => {
                     const p = productById.get(id);
                     if (!p) return null;
                     const units = unitMap[id];
                     const pin = pins[id] ?? null;
                     return (
                       <div key={id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0' }}>
-                        <Thumb url={null} />
+                        <Thumb url={pinnedUnit(id)?.image_url ?? p.image_url} />
                         <div style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>
                           <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
                           <select
@@ -449,15 +463,32 @@ export function BundlesView({ showToast }: ViewProps) {
             <div className="card card-pad">
               <div className="section-h"><div><h3>ส่วนลดและราคา</h3></div></div>
               <div className="field" style={{ marginBottom: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span className="field-label">ส่วนลดจากราคารวม</span>
-                  <span className="num" style={{ fontWeight: 600 }}>{discount}%</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span className="field-label" style={{ margin: 0 }}>ส่วนลดจากราคารวม</span>
+                  <div style={{ display: 'inline-flex', gap: 4 }}>
+                    <button type="button" className={'btn btn-sm' + (discountMode === 'pct' ? ' btn-primary' : '')} onClick={() => setDiscountMode('pct')}>%</button>
+                    <button type="button" className={'btn btn-sm' + (discountMode === 'thb' ? ' btn-primary' : '')} onClick={() => setDiscountMode('thb')}>฿ บาท</button>
+                  </div>
                 </div>
-                <input type="range" min={0} max={30} step={1} value={discount} onChange={(e) => setDiscount(+e.target.value)} style={{ width: '100%', accentColor: 'var(--accent)' }} />
+                {discountMode === 'pct' ? (
+                  <>
+                    <div className="num" style={{ fontWeight: 600, textAlign: 'right', marginBottom: 4 }}>{discount}%</div>
+                    <input type="range" min={0} max={100} step={1} value={discount} onChange={(e) => setDiscount(+e.target.value)} style={{ width: '100%', accentColor: 'var(--accent)' }} />
+                  </>
+                ) : (
+                  <div className="input-prefix"><span className="pfx">฿</span>
+                    <input className="input num" type="number" min={0} placeholder="0" value={discountThb || ''} onChange={(e) => setDiscountThb(Math.max(0, +e.target.value || 0))} /></div>
+                )}
+              </div>
+              <div className="field" style={{ marginBottom: 14 }}>
+                <label className="field-label">ค่าประกอบ (บาท)</label>
+                <div className="input-prefix"><span className="pfx">฿</span>
+                  <input className="input num" type="number" min={0} placeholder="0" value={assemblyFee || ''} onChange={(e) => setAssemblyFee(Math.max(0, +e.target.value || 0))} /></div>
               </div>
               <div className="summary-box">
                 <div className="summary-row"><span className="muted">ราคารวม (ก่อนลด)</span><span className="num">{fmtTHB(listPrice)}</span></div>
-                <div className="summary-row"><span className="muted">ส่วนลด {discount}%</span><span className="num" style={{ color: 'var(--neg)' }}>−{fmtTHB(listPrice - bundlePrice)}</span></div>
+                <div className="summary-row"><span className="muted">ส่วนลด{discountMode === 'pct' ? ` ${discount}%` : ''}</span><span className="num" style={{ color: 'var(--neg)' }}>−{fmtTHB(discountAmount)}</span></div>
+                {assemblyFee > 0 && <div className="summary-row"><span className="muted">ค่าประกอบ</span><span className="num">+{fmtTHB(assemblyFee)}</span></div>}
                 <div className="summary-row"><span className="muted">ต้นทุนรวม</span><span className="num">{fmtTHB(cost)}</span></div>
                 <div className="divider" style={{ margin: '4px 0' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>

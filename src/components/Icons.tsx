@@ -43,6 +43,7 @@ export const Icons = {
   arrowDown: (p: IconProps) => <Ic {...p} d="M12 5v14M6 13l6 6 6-6" />,
   arrowUp: (p: IconProps) => <Ic {...p} d="M12 19V5M6 11l6-6 6 6" />,
   arrowRight: (p: IconProps) => <Ic {...p} d="M5 12h14M13 6l6 6-6 6" />,
+  eye: (p: IconProps) => <Ic {...p} d={<><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>} />,
   upload: (p: IconProps) => <Ic {...p} d={<><path d="M12 16V4M6 10l6-6 6 6" /><path d="M4 20h16" /></>} />,
   camera: (p: IconProps) => <Ic {...p} d={<><path d="M3 9a2 2 0 0 1 2-2h1.5l1.2-2h6.6l1.2 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><circle cx="12" cy="13" r="3.2" /></>} />,
   star: (p: IconProps) => <Ic {...p} d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" />,

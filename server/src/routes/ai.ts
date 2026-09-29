@@ -9,6 +9,8 @@ import { requireAuth } from '../auth';
 import { renderHtmlToPng } from '../lib/renderHtmlToPng';
 import { buildBundlePosterHtml, type PosterSpecRow } from '../lib/bundlePosterTemplate';
 import { AI_IMAGE_GEN_ENABLED, FEATURE_DISABLED } from '../lib/features';
+import { bundlePrice } from '../lib/bundlePrice';
+import { buildRank } from '../lib/buildOrder';
 
 const AI_IMAGE_DIR = fileURLToPath(new URL('../../uploads/ai-images', import.meta.url));
 
@@ -646,13 +648,13 @@ ${fieldList}
     if (!b.bundleId) return reply.code(400).send({ error: 'กรุณาบันทึกชุดสินค้าก่อนสร้างโปสเตอร์' });
 
     // Bundle exists?
-    const { rows: bundleRows } = await query<{ discount_pct: number }>(
-      'select discount_pct from bundles where id = $1',
+    const { rows: bundleRows } = await query<{ discount_pct: number; discount_thb: number; assembly_fee: number }>(
+      'select discount_pct, discount_thb, assembly_fee from bundles where id = $1',
       [b.bundleId],
     );
     if (!bundleRows[0]) return reply.code(404).send({ error: 'ไม่พบชุดสินค้านี้' });
 
-    // Components → spec rows, ordered cpu→mb→ram→ssd→psu→gpu→other.
+    // Components → spec rows, in PC-build order (see lib/buildOrder).
     const { rows: comps } = await query<{ name: string; model: string | null; slug: string | null; price: number }>(
       `select p.name, p.model, c.slug,
               coalesce(min(s.price) filter (where s.status = 'in_stock'), 0) as price
@@ -670,23 +672,18 @@ ${fieldList}
     const CAT_LABEL: Record<string, string> = {
       cpu: 'CPU', mb: 'MAINBOARD', ram: 'RAM', ssd: 'STORAGE', psu: 'POWER SUPPLY', gpu: 'GPU', monitor: 'MONITOR',
     };
-    const ORDER = ['cpu', 'mb', 'ram', 'ssd', 'psu', 'gpu'];
-    const rank = (slug: string | null) => {
-      const i = ORDER.indexOf(slug ?? '');
-      return i === -1 ? ORDER.length : i;
-    };
     const specs: PosterSpecRow[] = comps
       .slice()
-      .sort((a, z) => rank(a.slug) - rank(z.slug))
+      .sort((a, z) => buildRank(a.slug) - buildRank(z.slug))
       .map((c) => ({
         slug: c.slug ?? 'default',
         label: CAT_LABEL[c.slug ?? ''] ?? 'อุปกรณ์',
         text: [c.name, c.model].filter(Boolean).join(' ').toUpperCase(),
       }));
 
-    // Price: caller value wins, else sum(component prices) * (1 - discount%).
+    // Price: caller value wins, else sum(component prices) minus the bundle discount.
     const sum = comps.reduce((s, c) => s + Number(c.price || 0), 0);
-    const computed = Math.round(sum * (1 - (Number(bundleRows[0].discount_pct) || 0) / 100));
+    const computed = bundlePrice(sum, Number(bundleRows[0].discount_pct), Number(bundleRows[0].discount_thb), Number(bundleRows[0].assembly_fee));
     const price = typeof b.price === 'number' && b.price > 0 ? b.price : computed;
 
     // Shop settings for the footer (fall back to store defaults when blank).
@@ -856,19 +853,23 @@ async function generateSetup(
 ): Promise<Result> {
   let components: Component[] = [];
   let discountPct = 0;
+  let discountThb = 0;
+  let assemblyFee = 0;
   let title = 'ชุดคอมประกอบ';
 
   if (b.bundleId) {
-    const { rows } = await query('select name, discount_pct from bundles where id = $1', [b.bundleId]);
+    const { rows } = await query('select name, discount_pct, discount_thb, assembly_fee from bundles where id = $1', [b.bundleId]);
     if (!rows[0]) return { error: 'ไม่พบชุดสินค้านี้', code: 404 };
     title = (rows[0] as Record<string, unknown>).name as string;
     discountPct = num((rows[0] as Record<string, unknown>).discount_pct);
+    discountThb = num((rows[0] as Record<string, unknown>).discount_thb);
+    assemblyFee = num((rows[0] as Record<string, unknown>).assembly_fee);
     const { rows: itemRows } = await query(
       'select product_id from bundle_items where bundle_id = $1',
       [b.bundleId],
     );
     const ids = itemRows.map((r) => Number((r as Record<string, unknown>).product_id));
-    components = await fetchComponents(ids);
+    components = (await fetchComponents(ids)).sort((a, z) => buildRank(a.category_slug) - buildRank(z.category_slug));
   } else {
     const ids = Array.isArray(b.productIds) ? b.productIds.map(Number).filter(Number.isFinite) : [];
     if (!ids.length) return { error: 'กรุณาเลือกสินค้าอย่างน้อยหนึ่งรายการ', code: 400 };
@@ -877,7 +878,7 @@ async function generateSetup(
   if (!components.length) return { error: 'ไม่พบสินค้าในชุดนี้', code: 400 };
 
   const listPrice = components.reduce((sum, c) => sum + c.price, 0);
-  const price = Math.round(listPrice * (1 - discountPct / 100));
+  const price = bundlePrice(listPrice, discountPct, discountThb, assemblyFee);
 
   const hasGpu = components.some((c) => c.category_slug === 'gpu');
   let gpuAddons: Component[] = [];

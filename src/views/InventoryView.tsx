@@ -17,6 +17,8 @@ import {
   type UnitInput,
 } from '../data/inventory';
 import { ImageManager } from '../components/ImageManager';
+import { ImageLightbox } from '../components/ImageLightbox';
+import { PurchaseDateInput, todayISO, fmtPurchaseDate } from '../components/PurchaseDateInput';
 import { WARRANTY_PRESETS, isPresetWarranty, warrantyDisplay, resolveWarranty } from '../data/warranty';
 import { useUnitMatches } from '../hooks/useUnitMatches';
 import { ApiError } from '../lib/api';
@@ -28,7 +30,7 @@ interface ViewProps {
   onEditProduct: (id: number) => void;
 }
 
-type SortKey = 'name' | 'stock' | 'price' | 'created';
+type SortKey = 'name' | 'stock' | 'cost' | 'price' | 'created';
 type StockFilter = 'all' | 'in' | 'out';
 
 /** Price range label for a catalog's in-stock units. */
@@ -36,6 +38,13 @@ function priceLabel(p: Product): string {
   if (p.price_min == null) return '—';
   if (p.price_max != null && p.price_max !== p.price_min) return `${fmtTHB(p.price_min)}+`;
   return fmtTHB(p.price_min);
+}
+
+/** Cost range label for a catalog's in-stock units, e.g. "฿1,600–1,700". */
+function costLabel(p: Product): string {
+  if (p.cost_min == null) return '—';
+  if (p.cost_max != null && p.cost_max !== p.cost_min) return `${fmtTHB(p.cost_min)}–${fmtTHB(p.cost_max).replace('฿', '')}`;
+  return fmtTHB(p.cost_min);
 }
 
 export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
@@ -49,6 +58,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<number | 'all'>('all');
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
+  const [preview, setPreview] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'created', dir: 'desc' });
@@ -86,10 +96,11 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
         (p.model ?? '').toLowerCase().includes(s) ||
         matchedPids.has(p.id));
     }
-    // Date-range filtering is done server-side (by unit added-dates).
+    // Date-range filtering is done server-side (by unit purchase dates).
     const sortVal = (p: Product): string | number =>
       sort.key === 'name' ? p.name
         : sort.key === 'stock' ? p.stock
+        : sort.key === 'cost' ? (p.cost_min ?? 0)
         : sort.key === 'price' ? (p.price_min ?? 0)
         : Date.parse(p.created_at);
     arr.sort((a, b) => {
@@ -180,8 +191,8 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
             <option value="all">ทุกหมวดหมู่</option>
             {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <label className="date-filter" title="เพิ่มตั้งแต่วันที่">
-            <span>เพิ่มตั้งแต่</span>
+          <label className="date-filter" title="ซื้อตั้งแต่วันที่">
+            <span>ซื้อตั้งแต่</span>
             <span className="date-box">
               <input className={'input' + (dateFrom ? '' : ' is-empty')} type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
               {!dateFrom && <span className="date-ph">วัน/เดือน/ปี</span>}
@@ -214,10 +225,11 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                 <SortHd k="name">สินค้า</SortHd>
                 <th>หมวด</th>
                 <SortHd k="stock" right>คงเหลือ</SortHd>
+                <SortHd k="cost" right>ราคาทุน</SortHd>
                 <SortHd k="price" right>ราคาขาย</SortHd>
                 <SortHd k="created">เพิ่มเมื่อ</SortHd>
                 <th>สถานะ</th>
-                <th style={{ width: 90 }} />
+                <th style={{ width: 124 }} />
               </tr>
             </thead>
             <tbody>
@@ -228,18 +240,20 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                       <div className="product-cell-name">
                         {p.name}
                         {p.draft_count > 0 && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>แบบร่าง {p.draft_count}</span>}
-                        {(dateFrom || dateTo) && <span className="chip chip-accent" style={{ marginLeft: 6, fontSize: 10 }}>เพิ่ม {p.added_in_range} เครื่องในช่วงนี้</span>}
+                        {(dateFrom || dateTo) && <span className="chip chip-accent" style={{ marginLeft: 6, fontSize: 10 }}>ซื้อ {p.added_in_range} เครื่องในช่วงนี้</span>}
                       </div>
                       <div className="product-cell-meta">{p.model || '—'}</div>
                     </div>
                   </td>
                   <td data-label="หมวด"><span className="muted" style={{ fontSize: 12.5 }}>{p.category_name || '—'}</span></td>
                   <td className="num" data-label="คงเหลือ" style={{ textAlign: 'right' }}>{p.stock}</td>
+                  <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{costLabel(p)}</td>
                   <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{priceLabel(p)}</td>
                   <td data-label="เพิ่มเมื่อ"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(p.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}</span></td>
                   <td data-label="สถานะ">{statusChip(p)}</td>
                   <td className="cell-actions" style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
+                      <button className="btn btn-sm btn-icon btn-ghost" title={p.image_url ? 'ดูรูป (เครื่องที่ถูกที่สุด)' : 'ไม่มีรูป'} disabled={!p.image_url} onClick={() => setPreview(p.image_url)}><Icons.eye /></button>
                       <button className="btn btn-sm btn-icon btn-ghost" title="ดูรายละเอียด" onClick={() => setDetailId(p.id)}><Icons.arrowRight /></button>
                       <button className="btn btn-sm btn-icon btn-ghost" title="ลบ" onClick={() => onDelete(p)}><Icons.trash /></button>
                     </div>
@@ -247,12 +261,12 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                 </tr>
               ))}
               {!loading && pageItems.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">
+                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40 }} className="muted">
                   {tab === 'draft' ? 'ไม่มีสินค้าที่มีเครื่องแบบร่าง' : 'ยังไม่มีสินค้า — กด "เพิ่มสินค้า" เพื่อเริ่ม'}
                 </td></tr>
               )}
               {loading && (
-                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">กำลังโหลด...</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40 }} className="muted">กำลังโหลด...</td></tr>
               )}
             </tbody>
           </table>
@@ -271,6 +285,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
           </div>
         </div>
       </div>
+      {preview && <ImageLightbox images={[preview]} index={0} onIndexChange={() => {}} onClose={() => setPreview(null)} />}
     </div>
   );
 }
@@ -286,9 +301,9 @@ interface DetailProps {
 }
 
 /** Blank unit form values. */
-const blankUnit = (): UnitFormState => ({ serial: '', sku: '', cost: '', price: '', warranty: '36', warrantyCustom: false, note: '', cover: null, images: [], draft: false });
+const blankUnit = (): UnitFormState => ({ serial: '', sku: '', cost: '', price: '', warranty: '36', warrantyCustom: false, note: '', cover: null, images: [], purchasedAt: todayISO(), draft: false });
 interface UnitFormState {
-  serial: string; sku: string; cost: string; price: string; warranty: string; warrantyCustom: boolean; note: string; cover: string | null; images: string[]; draft: boolean;
+  serial: string; sku: string; cost: string; price: string; warranty: string; warrantyCustom: boolean; note: string; cover: string | null; images: string[]; purchasedAt: string; draft: boolean;
 }
 const toUnitInput = (u: UnitFormState): UnitInput => ({
   serial: u.serial.trim(),
@@ -299,6 +314,7 @@ const toUnitInput = (u: UnitFormState): UnitInput => ({
   note: u.note.trim() || null,
   image_url: u.cover,
   images: u.images,
+  purchased_at: u.purchasedAt || null,
   draft: u.draft,
 });
 
@@ -352,7 +368,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
       price: s.price ? String(s.price) : '',
       warranty: s.warranty_text ?? String(s.warranty_months),
       warrantyCustom: !!s.warranty_text || !isPresetWarranty(String(s.warranty_months)),
-      note: s.note ?? '', cover: s.image_url, images: s.images, draft: s.status === 'draft',
+      note: s.note ?? '', cover: s.image_url, images: s.images, purchasedAt: s.purchased_at, draft: s.status === 'draft',
     });
   };
 
@@ -459,7 +475,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
 
             <div className="table-wrap">
               <table className="tbl tbl-cards">
-                <thead><tr><th>Serial / SKU</th><th style={{ textAlign: 'right' }}>ราคาทุน</th><th style={{ textAlign: 'right' }}>ราคาขาย</th><th>รับประกัน</th><th>เพิ่มเมื่อ</th><th>สถานะ</th><th style={{ width: 80 }} /></tr></thead>
+                <thead><tr><th>Serial / SKU</th><th style={{ textAlign: 'right' }}>ราคาทุน</th><th style={{ textAlign: 'right' }}>ราคาขาย</th><th>รับประกัน</th><th>วันที่ซื้อ</th><th>สถานะ</th><th style={{ width: 80 }} /></tr></thead>
                 <tbody>
                   {serials.map((s) => (
                     editId === s.id ? (
@@ -489,7 +505,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                         <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{fmtTHB(s.cost)}</td>
                         <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(s.price)}</td>
                         <td data-label="รับประกัน"><span className="muted" style={{ fontSize: 12.5 }}>{warrantyDisplay(s.warranty_months, s.warranty_text)}</span></td>
-                        <td data-label="เพิ่มเมื่อ"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(s.created_at).toLocaleDateString('en-GB')}</span></td>
+                        <td data-label="วันที่ซื้อ"><span className="muted" style={{ fontSize: 12.5 }}>{fmtPurchaseDate(s.purchased_at)}</span></td>
                         <td data-label="สถานะ">{serialStatusChip(s.status)}</td>
                         <td className="cell-actions">
                           <div style={{ display: 'inline-flex', gap: 4 }}>
@@ -562,6 +578,7 @@ function UnitFields({ value, onChange, onUploadError, productId }: {
           <input className="input" style={{ marginTop: 6 }} type="text" placeholder="พิมพ์ได้ตามต้องการ เช่น 15 วัน, ประกันตลอดชีพ" value={isPresetWarranty(value.warranty) ? '' : value.warranty} onChange={(e) => set({ warranty: e.target.value })} autoFocus />
         )}
       </div>
+      <PurchaseDateInput value={value.purchasedAt} onChange={(purchasedAt) => set({ purchasedAt })} />
       <div className="field">
         <label className="field-label">ราคาทุน (บาท)</label>
         <div className="input-prefix"><span className="pfx">฿</span>

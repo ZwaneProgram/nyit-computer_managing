@@ -86,3 +86,48 @@ export async function createSale(payload: NewSale): Promise<Sale> {
   const { sale } = await http.post<{ sale: Record<string, unknown> }>('/api/sales', payload);
   return normSale(sale);
 }
+
+export interface SaleLine {
+  id: number;
+  name: string;
+  qty: number;
+  unit_price: number;
+  unit_cost: number;
+}
+
+export interface SaleDetail extends Sale {
+  revision: string;
+  items: SaleLine[];
+  units: { id: number; name: string; serial: string; sku: string | null }[];
+}
+
+export interface SaleUpdate {
+  revision: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
+  tax_id: string | null;
+  shipping: number;
+  discount: number;
+  items: { id: number; unit_price: number }[];
+}
+
+export async function fetchSale(id: number): Promise<SaleDetail> {
+  const { sale } = await http.get<{ sale: Record<string, unknown> }>(`/api/sales/${id}`);
+  return {
+    ...normSale(sale),
+    revision: String(sale.revision),
+    items: (sale.items as SaleLine[]).map((line) => ({
+      ...line, id: Number(line.id), qty: num(line.qty), unit_price: num(line.unit_price), unit_cost: num(line.unit_cost),
+    })),
+    units: (sale.units as SaleDetail['units']).map((unit) => ({ ...unit, id: Number(unit.id) })),
+  };
+}
+
+export async function updateSale(id: number, payload: SaleUpdate): Promise<void> {
+  await http.put(`/api/sales/${id}`, payload);
+}
+
+export async function deleteSale(id: number, revision: string): Promise<void> {
+  await http.del(`/api/sales/${id}?revision=${encodeURIComponent(revision)}`);
+}

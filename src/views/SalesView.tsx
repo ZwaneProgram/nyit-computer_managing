@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icons } from '../components/Icons';
 import { fmtTHB } from '../data/format';
 import { fetchProduct, fetchProducts, searchUnits, type Product, type Serial, type UnitMatch } from '../data/inventory';
-import { fetchBundles, type Bundle } from '../data/bundles';
+import { bundlePrice, fetchBundles, type Bundle } from '../data/bundles';
 import { warrantyDisplay } from '../data/warranty';
-import { createSale, fetchSales, type NewSale, type Sale } from '../data/sales';
+import { createSale, deleteSale, fetchSale, fetchSales, type NewSale, type Sale, type SaleDetail } from '../data/sales';
+import { SaleEditor } from '../components/SaleEditor';
 import { ApiError } from '../lib/api';
 
 interface ViewProps {
@@ -43,6 +44,9 @@ export function SalesView({ showToast }: ViewProps) {
   const [history, setHistory] = useState<Sale[]>([]);
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [editingSale, setEditingSale] = useState<SaleDetail | null>(null);
+  const [historyAction, setHistoryAction] = useState<number | null>(null);
+  const historyRequest = useRef(0);
   const [hq, setHq] = useState('');
   const [hqDebounced, setHqDebounced] = useState('');
   const [hFrom, setHFrom] = useState('');
@@ -64,6 +68,7 @@ export function SalesView({ showToast }: ViewProps) {
   useEffect(() => { setHPage(1); }, [hqDebounced, hFrom, hTo]);
 
   const loadHistory = useCallback(() => {
+    const request = ++historyRequest.current;
     setHistoryLoading(true);
     fetchSales({
       q: hqDebounced || undefined,
@@ -72,11 +77,43 @@ export function SalesView({ showToast }: ViewProps) {
       limit: HISTORY_PER_PAGE,
       offset: (hPage - 1) * HISTORY_PER_PAGE,
     })
-      .then((r) => { setHistory(r.sales); setHistoryTotal(r.total); })
-      .catch(() => {})
-      .finally(() => setHistoryLoading(false));
-  }, [hqDebounced, hFrom, hTo, hPage]);
+      .then((r) => {
+        if (request !== historyRequest.current) return;
+        setHistory(r.sales);
+        setHistoryTotal(r.total);
+        // Deleting the final row on a page returns to the last remaining page.
+        const lastPage = Math.max(1, Math.ceil(r.total / HISTORY_PER_PAGE));
+        if (hPage > lastPage) setHPage(lastPage);
+      })
+      .catch((err) => {
+        if (request === historyRequest.current) showToast(err instanceof Error ? err.message : 'โหลดประวัติไม่สำเร็จ');
+      })
+      .finally(() => { if (request === historyRequest.current) setHistoryLoading(false); });
+  }, [hqDebounced, hFrom, hTo, hPage, showToast]);
   useEffect(() => { if (mode === 'history') loadHistory(); }, [mode, loadHistory]);
+
+  const openSale = async (id: number) => {
+    if (historyAction !== null) return;
+    setHistoryAction(id);
+    try { setEditingSale(await fetchSale(id)); }
+    catch (err) { showToast(err instanceof Error ? err.message : 'เปิดบิลไม่สำเร็จ'); }
+    finally { setHistoryAction(null); }
+  };
+
+  const removeSale = async (id: number) => {
+    if (historyAction !== null) return;
+    setHistoryAction(id);
+    try {
+      const sale = await fetchSale(id);
+      if (!window.confirm(`ลบบิล #${id} ของ ${sale.customer_name || 'ลูกค้าไม่ระบุชื่อ'} ยอด ${fmtTHB(sale.total, { maximumFractionDigits: 2 })}?\n\nระบบจะคืนสินค้าที่ผูกกับบิล ${sale.units.length} เครื่องเข้าสต๊อก และนำยอดขายนี้ออกจากรายงาน\nการลบไม่สามารถยกเลิกได้`)) return;
+      await deleteSale(id, sale.revision);
+      setUnitMap({});
+      loadProducts();
+      loadHistory();
+      showToast('ลบบิลแล้ว · คืนสินค้าเข้าสต๊อกแล้ว');
+    } catch (err) { showToast(err instanceof Error ? err.message : 'ลบบิลไม่สำเร็จ'); }
+    finally { setHistoryAction(null); }
+  };
 
   // Lazy-load a product's in-stock units when its picker row is expanded.
   const loadUnits = useCallback(async (pid: number) => {
@@ -161,7 +198,7 @@ export function SalesView({ showToast }: ViewProps) {
   const subtotal = type === 'item'
     ? cart.reduce((s, c) => s + c.serial.price, 0)
     : picksReady
-      ? Math.round(bundlePickUnits.reduce((s, u) => s + u!.price, 0) * (1 - selectedBundle!.discount_pct / 100))
+      ? bundlePrice(bundlePickUnits.reduce((s, u) => s + u!.price, 0), selectedBundle!.discount_pct, selectedBundle!.discount_thb, selectedBundle!.assembly_fee)
       : (selectedBundle ? selectedBundle.price * bundleQty : 0);
   const cost = type === 'item'
     ? cart.reduce((s, c) => s + c.serial.cost, 0)
@@ -276,12 +313,16 @@ export function SalesView({ showToast }: ViewProps) {
       </div>
 
       <div className="tabs">
-        <button className="tab" data-active={mode === 'new'} onClick={() => setMode('new')}>เปิดบิลใหม่</button>
-        <button className="tab" data-active={mode === 'history'} onClick={() => setMode('history')}>ประวัติการขาย</button>
+        <button className="tab" disabled={editingSale !== null || historyAction !== null} data-active={mode === 'new'} onClick={() => setMode('new')}>เปิดบิลใหม่</button>
+        <button className="tab" disabled={editingSale !== null || historyAction !== null} data-active={mode === 'history'} onClick={() => setMode('history')}>ประวัติการขาย</button>
       </div>
 
       {mode === 'history' ? (
         <div className="grid" style={{ gap: 'var(--gap)' }}>
+          {editingSale ? <SaleEditor key={editingSale.id} sale={editingSale}
+            onClose={() => setEditingSale(null)}
+            onSaved={() => { setEditingSale(null); loadHistory(); showToast('บันทึกการแก้ไขบิลแล้ว'); }}
+          /> : <>
           <div className="card card-pad" style={{ paddingBottom: 16 }}>
             <div className="filterbar" style={{ flexWrap: 'wrap', gap: 10 }}>
               <div className="search grow">
@@ -315,6 +356,7 @@ export function SalesView({ showToast }: ViewProps) {
                   <tr>
                     <th>เลขที่บิล</th><th>วันที่</th><th>รายการ</th><th>ลูกค้า</th><th>พนักงาน</th>
                     <th style={{ textAlign: 'right' }}>ยอดรวม</th><th style={{ textAlign: 'right' }}>กำไร</th>
+                    <th>จัดการ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -330,14 +372,21 @@ export function SalesView({ showToast }: ViewProps) {
                       </td>
                       <td data-label="ลูกค้า">{t.customer_name || '—'}</td>
                       <td data-label="พนักงาน"><span className="muted">{t.staff_name || t.staff_username || '—'}</span></td>
-                      <td className="num" data-label="ยอดรวม" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(t.total)}</td>
-                      <td className="num" data-label="กำไร" style={{ textAlign: 'right', color: 'var(--pos)' }}>+{fmtTHB(t.profit)}</td>
+                      <td className="num" data-label="ยอดรวม" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(t.total, { maximumFractionDigits: 2 })}</td>
+                      <td className="num" data-label="กำไร" style={{ textAlign: 'right', color: t.profit < 0 ? 'var(--neg)' : 'var(--pos)' }}>{fmtTHB(t.profit, { maximumFractionDigits: 2 })}</td>
+                      <td className="cell-actions" data-label="จัดการ">
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn btn-sm" disabled={historyAction !== null} aria-label={`แก้ไขบิล #${t.id}`} onClick={() => openSale(t.id)}><Icons.edit /> แก้ไข</button>
+                          <button className="btn btn-sm btn-ghost" disabled={historyAction !== null} aria-label={`ลบบิล #${t.id}`} onClick={() => removeSale(t.id)}><Icons.trash /> ลบ</button>
+                        </div>
+                        {historyAction === t.id && <span className="muted" role="status">กำลังโหลด...</span>}
+                      </td>
                     </tr>
                   ))}
                   {!historyLoading && history.length === 0 && (
-                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">ไม่พบประวัติการขาย</td></tr>
+                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40 }} className="muted">ไม่พบประวัติการขาย</td></tr>
                   )}
-                  {historyLoading && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40 }} className="muted">กำลังโหลด...</td></tr>}
+                  {historyLoading && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40 }} className="muted">กำลังโหลด...</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -350,6 +399,7 @@ export function SalesView({ showToast }: ViewProps) {
               </div>
             </div>
           </div>
+          </>}
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12">

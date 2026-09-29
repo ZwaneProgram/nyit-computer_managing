@@ -21,7 +21,12 @@ export interface BundleItem {
 export interface Bundle {
   id: number;
   name: string;
+  /** Percent off the list price (0 when a baht discount is used). */
   discount_pct: number;
+  /** Flat baht off each set (0 when a percent discount is used). */
+  discount_thb: number;
+  /** Flat baht assembly fee added to each set (after the discount). */
+  assembly_fee: number;
   /** 0 = shop warranty (30 days), >0 = months. Overridden by warranty_text when set. */
   warranty_months: number;
   /** Free-text warranty (e.g. "15 วัน"); null = use warranty_months. */
@@ -45,6 +50,26 @@ export interface Bundle {
 
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
 
+/**
+ * One bundle's selling price: list price minus percent, then minus baht (never
+ * below zero), then plus the assembly fee. Mirrors server/src/lib/bundlePrice.ts.
+ */
+export const bundlePrice = (listPrice: number, discountPct: number, discountThb: number, assemblyFee = 0): number =>
+  Math.max(0, Math.round(listPrice * (1 - discountPct / 100)) - discountThb) + assemblyFee;
+
+/**
+ * PC-build listing order by category slug: CPU, cooler, board, RAM, storage,
+ * VGA, PSU, case, monitor; anything else after. Mirrors server/src/lib/buildOrder.ts.
+ */
+export const BUILD_ORDER = ['cpu', 'cpu-cooler', 'mb', 'ram', 'ssd', 'gpu', 'psu', 'case', 'monitor'];
+export const buildRank = (slug: string | null | undefined): number => {
+  const i = BUILD_ORDER.indexOf(slug ?? '');
+  return i === -1 ? BUILD_ORDER.length : i;
+};
+
+/** A bundle's pricing extras — only one of the two discounts is non-zero. */
+export interface BundleDiscount { discount_pct: number; discount_thb: number; assembly_fee: number; }
+
 function normItem(r: Record<string, unknown>): BundleItem {
   return {
     product_id: Number(r.product_id),
@@ -65,11 +90,15 @@ function normBundle(r: Record<string, unknown>): Bundle {
   const list_price = items.reduce((s, i) => s + i.price, 0);
   const total_cost = items.reduce((s, i) => s + i.cost, 0);
   const discount_pct = num(r.discount_pct);
-  const price = Math.round(list_price * (1 - discount_pct / 100));
+  const discount_thb = num(r.discount_thb);
+  const assembly_fee = num(r.assembly_fee);
+  const price = bundlePrice(list_price, discount_pct, discount_thb, assembly_fee);
   return {
     id: Number(r.id),
     name: r.name as string,
     discount_pct,
+    discount_thb,
+    assembly_fee,
     warranty_months: num(r.warranty_months),
     warranty_text: (r.warranty_text as string) ?? null,
     images: Array.isArray(r.images) ? (r.images as string[]) : [],
@@ -97,12 +126,12 @@ export interface BundleImages {
 /** One component to save: a product with an optional pinned unit (null = auto). */
 export interface BundleComponent { product_id: number; serial_id: number | null; }
 
-export async function createBundle(name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, items: BundleComponent[], gallery: BundleImages): Promise<void> {
-  await http.post('/api/bundles', { name, discount_pct, warranty_months, warranty_text, items, ...gallery });
+export async function createBundle(name: string, discount: BundleDiscount, warranty_months: number, warranty_text: string | null, items: BundleComponent[], gallery: BundleImages): Promise<void> {
+  await http.post('/api/bundles', { name, ...discount, warranty_months, warranty_text, items, ...gallery });
 }
 
-export async function updateBundle(id: number, name: string, discount_pct: number, warranty_months: number, warranty_text: string | null, items: BundleComponent[], gallery: BundleImages): Promise<void> {
-  await http.put(`/api/bundles/${id}`, { name, discount_pct, warranty_months, warranty_text, items, ...gallery });
+export async function updateBundle(id: number, name: string, discount: BundleDiscount, warranty_months: number, warranty_text: string | null, items: BundleComponent[], gallery: BundleImages): Promise<void> {
+  await http.put(`/api/bundles/${id}`, { name, ...discount, warranty_months, warranty_text, items, ...gallery });
 }
 
 export async function deleteBundle(id: number): Promise<void> {

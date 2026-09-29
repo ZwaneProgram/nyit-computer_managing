@@ -10,6 +10,7 @@ import {
   type ProductInput,
 } from '../data/inventory';
 import { ImageManager } from '../components/ImageManager';
+import { PurchaseDateInput, todayISO } from '../components/PurchaseDateInput';
 import { generateProductSpecs } from '../data/aiPost';
 import { fetchSettings } from '../data/settings';
 import { WARRANTY_PRESETS, isPresetWarranty, resolveWarranty } from '../data/warranty';
@@ -34,6 +35,7 @@ interface UnitDraft {
   note: string;
   cover: string | null;
   images: string[];
+  purchasedAt: string;
   draft: boolean;
 }
 const emptyUnit = (from?: UnitDraft): UnitDraft => ({
@@ -46,6 +48,8 @@ const emptyUnit = (from?: UnitDraft): UnitDraft => ({
   note: '',
   cover: null,
   images: [],
+  // Units entered together are usually one purchase — carry the date forward.
+  purchasedAt: from?.purchasedAt ?? todayISO(),
   draft: false,
 });
 
@@ -163,6 +167,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
             note: u.note.trim() || null,
             image_url: u.cover,
             images: u.images,
+            purchased_at: u.purchasedAt || null,
             draft: u.draft,
           })),
       }),
@@ -328,6 +333,7 @@ export function AddProductView({ onNav, showToast, editId }: ViewProps) {
                           <input className="input" style={{ marginTop: 6 }} type="text" placeholder="พิมพ์ได้ตามต้องการ เช่น 15 วัน, ประกันตลอดชีพ" value={isPresetWarranty(u.warranty) ? '' : u.warranty} onChange={(e) => setUnit(i, { warranty: e.target.value })} autoFocus />
                         )}
                       </div>
+                      <PurchaseDateInput value={u.purchasedAt} onChange={(purchasedAt) => setUnit(i, { purchasedAt })} />
                       <div className="field">
                         <label className="field-label">ราคาทุน (บาท)</label>
                         <div className="input-prefix"><span className="pfx">฿</span>

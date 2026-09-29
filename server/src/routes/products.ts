@@ -13,6 +13,8 @@ interface UnitInput {
   note?: string | null;
   image_url?: string | null;
   images?: unknown;
+  /** Day the shop bought the unit, YYYY-MM-DD (omitted = today on create, unchanged on edit). */
+  purchased_at?: string | null;
   draft?: boolean;
 }
 
@@ -41,6 +43,7 @@ interface CleanUnit {
   note: string | null;
   image_url: string | null;
   images: string[];
+  purchased_at: string | null;
   draft: boolean;
 }
 
@@ -63,6 +66,23 @@ function galleryFor(u: UnitInput): { images: string[]; cover: string | null } {
   if (cover && !images.includes(cover)) images = [cover, ...images];
   if (!cover) cover = images[0] ?? null;
   return { images, cover };
+}
+
+/** Today's date in the shop's timezone, YYYY-MM-DD. */
+const shopToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+
+/** A real calendar date as YYYY-MM-DD, else null. */
+function cleanDate(input: unknown): string | null {
+  const s = typeof input === 'string' ? input.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s ? s : null;
+}
+
+/** Error message when any unit claims to be bought after today. */
+function futurePurchase(units: CleanUnit[]): string | null {
+  const today = shopToday();
+  return units.some((u) => u.purchased_at && u.purchased_at > today) ? 'วันที่ซื้อต้องไม่เกินวันนี้' : null;
 }
 
 /** Clean a unit list: trim serials, drop blank-serial rows, de-dupe by serial. */
@@ -88,6 +108,7 @@ function cleanUnits(input: unknown): CleanUnit[] {
       note: u.note?.toString().trim() || null,
       image_url: cover,
       images,
+      purchased_at: cleanDate(u.purchased_at),
       draft: u.draft === true,
     });
   }
@@ -105,10 +126,10 @@ function conflictMessage(err: unknown): string | null {
 
 // Catalog + category + derived stock + price range + in-stock cost total.
 const PRODUCT_SELECT = `
-  select p.*, c.name as category_name, c.slug as category_slug,
+  select p.*, c.name as category_name, c.slug as category_slug, ph.image_url,
          coalesce(s.in_stock, 0)::int as stock,
          coalesce(s.draft_count, 0)::int as draft_count,
-         s.price_min, s.price_max, s.cost_min, coalesce(s.stock_cost, 0) as stock_cost
+         s.price_min, s.price_max, s.cost_min, s.cost_max, coalesce(s.stock_cost, 0) as stock_cost
     from products p
     left join categories c on c.id = p.category_id
     left join (
@@ -118,19 +139,29 @@ const PRODUCT_SELECT = `
              min(price) filter (where status = 'in_stock') as price_min,
              max(price) filter (where status = 'in_stock') as price_max,
              min(cost)  filter (where status = 'in_stock') as cost_min,
+             max(cost)  filter (where status = 'in_stock') as cost_max,
              sum(cost)  filter (where status = 'in_stock') as stock_cost
         from product_serials group by product_id
-    ) s on s.product_id = p.id`;
+    ) s on s.product_id = p.id
+    -- Representative photo: the cheapest in-stock unit that has one.
+    left join lateral (
+      select image_url from product_serials
+       where product_id = p.id and status = 'in_stock' and image_url is not null
+       order by price, id limit 1
+    ) ph on true`;
 
-const UNIT_RETURN = 'id, serial, sku, status, cost, price, warranty_months, warranty_text, note, image_url, images, created_at';
+const UNIT_COLS = ['id', 'serial', 'sku', 'status', 'cost', 'price', 'warranty_months', 'warranty_text', 'note', 'image_url', 'images', 'created_at'];
+/** Unit columns to select; purchased_at comes back as plain YYYY-MM-DD (no timezone shift). */
+const unitReturn = (t = '') => [...UNIT_COLS.map((c) => t + c), `to_char(${t}purchased_at, 'YYYY-MM-DD') as purchased_at`].join(', ');
+const UNIT_RETURN = unitReturn();
 
 export async function productRoutes(app: FastifyInstance) {
   const guard = { preHandler: requireAuth() };
 
   // List catalogs.
   //   ?drafts=1     → only catalogs that contain at least one draft unit.
-  //   ?from=&to=    → only catalogs that had at least one UNIT added in the date
-  //                   range (by product_serials.created_at, inclusive); each row
+  //   ?from=&to=    → only catalogs that had at least one UNIT bought in the date
+  //                   range (by product_serials.purchased_at, inclusive); each row
   //                   also returns added_in_range = how many units fell in range.
   app.get('/api/products', async (req) => {
     const q = req.query as { drafts?: string; from?: string; to?: string };
@@ -138,10 +169,10 @@ export async function productRoutes(app: FastifyInstance) {
     const from = q.from?.trim() || null;
     const to = q.to?.trim() || null;
     const { rows } = await query(
-      `select p.*, c.name as category_name, c.slug as category_slug,
+      `select p.*, c.name as category_name, c.slug as category_slug, ph.image_url,
               coalesce(s.in_stock, 0)::int as stock,
               coalesce(s.draft_count, 0)::int as draft_count,
-              s.price_min, s.price_max, s.cost_min, coalesce(s.stock_cost, 0) as stock_cost,
+              s.price_min, s.price_max, s.cost_min, s.cost_max, coalesce(s.stock_cost, 0) as stock_cost,
               coalesce(s.added_in_range, 0)::int as added_in_range
          from products p
          left join categories c on c.id = p.category_id
@@ -152,13 +183,20 @@ export async function productRoutes(app: FastifyInstance) {
                   min(price) filter (where status = 'in_stock') as price_min,
                   max(price) filter (where status = 'in_stock') as price_max,
                   min(cost)  filter (where status = 'in_stock') as cost_min,
+                  max(cost)  filter (where status = 'in_stock') as cost_max,
                   sum(cost)  filter (where status = 'in_stock') as stock_cost,
                   count(*) filter (where
-                    ($2::date is null or created_at >= $2::date) and
-                    ($3::date is null or created_at < ($3::date + interval '1 day'))
+                    ($2::date is null or purchased_at >= $2::date) and
+                    ($3::date is null or purchased_at <= $3::date)
                   ) as added_in_range
              from product_serials group by product_id
          ) s on s.product_id = p.id
+         -- Representative photo: the cheapest in-stock unit that has one.
+         left join lateral (
+           select image_url from product_serials
+            where product_id = p.id and status = 'in_stock' and image_url is not null
+            order by price, id limit 1
+         ) ph on true
         where ($1::bool is false or coalesce(s.draft_count, 0) > 0)
           and (($2::date is null and $3::date is null) or coalesce(s.added_in_range, 0) > 0)
         order by p.name`,
@@ -175,7 +213,7 @@ export async function productRoutes(app: FastifyInstance) {
     const q = (req.query as { q?: string }).q?.trim() ?? '';
     if (!q) return { units: [] };
     const { rows } = await query(
-      `select ${UNIT_RETURN.split(', ').map((c) => `ps.${c}`).join(', ')}, ps.sale_id,
+      `select ${unitReturn('ps.')}, ps.sale_id,
               ps.product_id, p.name as product_name, p.brand as product_brand
          from product_serials ps
          join products p on p.id = ps.product_id
@@ -206,6 +244,8 @@ export async function productRoutes(app: FastifyInstance) {
     const status = b.status === 'draft' ? 'draft' : 'active';
     if (!b.name?.trim()) return reply.code(400).send({ error: 'ต้องระบุชื่อสินค้า' });
     const units = cleanUnits(b.units);
+    const future = futurePurchase(units);
+    if (future) return reply.code(400).send({ error: future });
 
     const client = await pool.connect();
     try {
@@ -223,9 +263,9 @@ export async function productRoutes(app: FastifyInstance) {
       const product = rows[0];
       for (const u of units) {
         await client.query(
-          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, warranty_text, note, image_url, images, status)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)`,
-          [product.id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, JSON.stringify(u.images), u.draft ? 'draft' : 'in_stock'],
+          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, warranty_text, note, image_url, images, status, purchased_at)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12)`,
+          [product.id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, JSON.stringify(u.images), u.draft ? 'draft' : 'in_stock', u.purchased_at ?? shopToday()],
         );
       }
       await client.query('commit');
@@ -274,6 +314,8 @@ export async function productRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const units = cleanUnits((req.body as { units?: UnitInput[] })?.units);
     if (!units.length) return reply.code(400).send({ error: 'ต้องระบุ Serial Number อย่างน้อยหนึ่งรายการ' });
+    const future = futurePurchase(units);
+    if (future) return reply.code(400).send({ error: future });
 
     const { rows: exists } = await query('select 1 from products where id = $1', [id]);
     if (!exists[0]) return reply.code(404).send({ error: 'ไม่พบสินค้า' });
@@ -284,10 +326,10 @@ export async function productRoutes(app: FastifyInstance) {
       const added = [];
       for (const u of units) {
         const { rows } = await client.query(
-          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, warranty_text, note, image_url, images, status)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
+          `insert into product_serials (product_id, serial, sku, cost, price, warranty_months, warranty_text, note, image_url, images, status, purchased_at)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12)
            returning ${UNIT_RETURN}`,
-          [id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, JSON.stringify(u.images), u.draft ? 'draft' : 'in_stock'],
+          [id, u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, JSON.stringify(u.images), u.draft ? 'draft' : 'in_stock', u.purchased_at ?? shopToday()],
         );
         added.push(rows[0]);
       }
@@ -308,15 +350,18 @@ export async function productRoutes(app: FastifyInstance) {
     const { serialId } = req.params as { serialId: string };
     const u = cleanUnits([req.body])[0];
     if (!u) return reply.code(400).send({ error: 'ต้องระบุ Serial Number' });
+    const future = futurePurchase([u]);
+    if (future) return reply.code(400).send({ error: future });
     const { rows: cur } = await query('select status from product_serials where id = $1', [serialId]);
     if (!cur[0]) return reply.code(404).send({ error: 'ไม่พบรายการ' });
     if (cur[0].status === 'sold') return reply.code(409).send({ error: 'แก้ไขไม่ได้: หน่วยนี้ถูกขายไปแล้ว' });
     try {
       const { rows } = await query(
         `update product_serials set serial = $1, sku = $2, cost = $3, price = $4,
-           warranty_months = $5, warranty_text = $6, note = $7, image_url = $8, images = $9::jsonb, status = $10 where id = $11
+           warranty_months = $5, warranty_text = $6, note = $7, image_url = $8, images = $9::jsonb, status = $10,
+           purchased_at = coalesce($12::date, purchased_at) where id = $11
          returning ${UNIT_RETURN}`,
-        [u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, JSON.stringify(u.images), u.draft ? 'draft' : 'in_stock', serialId],
+        [u.serial, u.sku, u.cost, u.price, u.warranty_months, u.warranty_text, u.note, u.image_url, JSON.stringify(u.images), u.draft ? 'draft' : 'in_stock', serialId, u.purchased_at],
       );
       return { serial: rows[0] };
     } catch (err) {
