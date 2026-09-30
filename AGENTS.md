@@ -34,7 +34,9 @@ Superseded first attempt (2026-09-29): bundle parts listed in PC-build order by 
 
 **Inventory photo preview (user add-on) 2026-09-29 (Claude):** eye button (`Icons.eye`) on each คลังสินค้า row opens `ImageLightbox` with the product's `image_url` (cheapest in-stock unit's photo, from task 8); disabled with title ไม่มีรูป when none.
 
-**Remaining:** 4 — owner clarified: on the STOREFRONT, product cards should show stock count when several units are in stock (deferred by user). 7 needs commit + deploy. Tasks 1–7 are all uncommitted/undeployed; nyitfront has matching uncommitted changes in `lib/products.ts`.
+**Task 4 (storefront, nyitfront) 2026-09-30 (Claude, user chose option B):** every in-stock unit is its own storefront item, id `unit-<serial id>` (own price/photos/warranty/note), via `UNIT_SELECT` in `nyitfront/lib/products.ts`. Bare product ids (old links/featured picks) resolve to the product's cheapest in-stock unit; sold unit → 404. Cart caps each unit at qty 1 (`maxQuantity` in site-chrome.tsx; also fixed the "?" minus glyph). Card shows the unit note; detail page lists sibling units first. Verified on live DB: 29 unit cards + 1 bundle. No migration. Uncommitted. NOTE: unit notes are public on cards — keep internal info out of them.
+
+**Remaining:** none open from the owner's list. 7 needs commit + deploy. Tasks 1–7 are all uncommitted/undeployed; nyitfront has matching uncommitted changes in `lib/products.ts`.
 
 **Working setup:** Local Vite `:5173` proxies `/api` and `/uploads` to local Fastify `:3000`; Fastify connects through `localhost:5433` over `ssh -L 5433:localhost:5432 root@194.233.88.142` to VPS PostgreSQL `:5432`. Keep that SSH session open. Local data writes/migrations affect the shop's live data. Upload files are not shared: upload shop photos on the live site; local `UPLOADS_FALLBACK_URL` supplies missing VPS images and must stay unset on the VPS.
 
