@@ -2,14 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icons } from '../components/Icons';
 import { fmtTHB } from '../data/format';
 import { fetchCategories, fetchProduct, fetchProducts, type Category, type Product, type Serial } from '../data/inventory';
-import { buildRank, bundlePrice as priceAfterDiscount, createBundle, deleteBundle, fetchBundles, updateBundle, type Bundle } from '../data/bundles';
+import { bundlePrice as priceAfterDiscount, createBundle, deleteBundle, fetchBundles, updateBundle, type Bundle } from '../data/bundles';
 import { ImageManager } from '../components/ImageManager';
 import { BUNDLE_WARRANTY_PRESETS, isPresetWarranty, warrantyDisplay, resolveWarranty, SHOP_WARRANTY_30 } from '../data/warranty';
 import { ApiError } from '../lib/api';
 import { generateBundlePoster } from '../data/aiPost';
 import { AI_IMAGE_GEN_ENABLED } from '../lib/features';
+import { fetchBundlePartOrder } from '../data/settings';
+import { useAuth } from '../auth/AuthContext';
+import type { ViewId } from '../types';
 
 interface ViewProps {
+  onNav: (id: ViewId) => void;
   showToast: (msg: string) => void;
 }
 
@@ -24,7 +28,8 @@ function Thumb({ url, lg }: { url: string | null; lg?: boolean }) {
   );
 }
 
-export function BundlesView({ showToast }: ViewProps) {
+export function BundlesView({ onNav, showToast }: ViewProps) {
+  const isOwner = useAuth().user?.role === 'owner';
   const [mode, setMode] = useState<'list' | 'edit'>('list');
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -44,7 +49,13 @@ export function BundlesView({ showToast }: ViewProps) {
   const [warrantyCustom, setWarrantyCustom] = useState(false);
   const [images, setImages] = useState<string[]>([]);
   const [cover, setCover] = useState<string | null>(null);
+  // Parts in the bundle, in the order they are shown and saved.
   const [selected, setSelected] = useState<number[]>([]);
+  // Default part order (category id -> position), from ตั้งค่าระบบ.
+  const [catRank, setCatRank] = useState<Map<number, number>>(new Map());
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  // true = keep parts in the ตั้งค่าระบบ order; moving a part by hand turns it off.
+  const [followSettings, setFollowSettings] = useState(true);
   // product_id -> pinned serial id (null = auto/cheapest).
   const [pins, setPins] = useState<Record<number, number | null>>({});
   // product_id -> in-stock units, loaded lazily for the pin dropdown.
@@ -75,6 +86,7 @@ export function BundlesView({ showToast }: ViewProps) {
   useEffect(() => {
     fetchProducts().then(setProducts).catch(() => {});
     fetchCategories().then(setCats).catch(() => {});
+    fetchBundlePartOrder().then((cs) => setCatRank(new Map(cs.map((c, i) => [c.id, i])))).catch(() => {});
   }, []);
 
   const productById = useMemo(() => {
@@ -103,7 +115,7 @@ export function BundlesView({ showToast }: ViewProps) {
 
   const cost = selected.reduce((s, id) => s + costFor(id), 0);
   const listPrice = selected.reduce((s, id) => s + priceFor(id), 0);
-  const activeDiscount = { discount_pct: discountMode === 'pct' ? discount : 0, discount_thb: discountMode === 'thb' ? discountThb : 0, assembly_fee: assemblyFee };
+  const activeDiscount = { discount_pct: discountMode === 'pct' ? discount : 0, discount_thb: discountMode === 'thb' ? discountThb : 0, assembly_fee: assemblyFee, custom_order: !followSettings };
   const discountAmount = listPrice - priceAfterDiscount(listPrice, activeDiscount.discount_pct, activeDiscount.discount_thb);
   const bundlePrice = priceAfterDiscount(listPrice, activeDiscount.discount_pct, activeDiscount.discount_thb, assemblyFee);
   const profit = bundlePrice - cost;
@@ -118,7 +130,7 @@ export function BundlesView({ showToast }: ViewProps) {
   const startCreate = () => {
     setEditingId(null); setName(''); setDiscountMode('pct'); setDiscount(0); setDiscountThb(0); setAssemblyFee(0); setWarranty('0'); setWarrantyCustom(false);
     setImages([]); setCover(null);
-    setSelected([]); setPins({}); setUnitMap({}); setQ(''); setFilterCat('all');
+    setSelected([]); setPins({}); setUnitMap({}); setQ(''); setFilterCat('all'); setFollowSettings(true);
     setMode('edit');
   };
   const startEdit = (b: Bundle) => {
@@ -128,11 +140,39 @@ export function BundlesView({ showToast }: ViewProps) {
     setWarrantyCustom(!!b.warranty_text || !isPresetWarranty(String(b.warranty_months)));
     setImages(b.images); setCover(b.image_url);
     setSelected(b.items.map((i) => i.product_id));
+    setFollowSettings(!b.custom_order);
     setPins(Object.fromEntries(b.items.map((i) => [i.product_id, i.serial_id])));
     setUnitMap({});
     b.items.forEach((i) => loadUnits(i.product_id)); // so the pin dropdown is ready
     setQ(''); setFilterCat('all');
     setMode('edit');
+  };
+
+  // Position of a part in the default order (unknown category → last).
+  const rankOf = (pid: number) => catRank.get(productById.get(pid)?.category_id ?? -1) ?? catRank.size;
+  // Put a new part in its default-order spot, after any parts of the same rank.
+  const placeInOrder = (list: number[], pid: number) => {
+    const at = list.findIndex((x) => rankOf(x) > rankOf(pid));
+    return at === -1 ? [...list, pid] : [...list.slice(0, at), pid, ...list.slice(at)];
+  };
+  const sortByDefault = () => setSelected((s) => [...s].sort((a, z) => rankOf(a) - rankOf(z)));
+  // Move the part at `from` to index `to` (drag or ↑↓) — the bundle is now hand-arranged.
+  const movePart = (from: number, to: number) => {
+    if (to < 0 || to >= selected.length || from === to) return;
+    setFollowSettings(false);
+    setSelected((s) => {
+      const next = [...s];
+      const [pid] = next.splice(from, 1);
+      next.splice(to, 0, pid);
+      return next;
+    });
+  };
+  const toggleFollowSettings = (on: boolean) => {
+    setFollowSettings(on);
+    if (on) sortByDefault();
+  };
+  const goToOrderSettings = () => {
+    if (window.confirm('ไปหน้าตั้งค่าลำดับ? การแก้ไขชุดนี้ที่ยังไม่บันทึกจะหายไป')) onNav('settings');
   };
 
   // Toggle a product in/out of the bundle; load its units when added.
@@ -141,7 +181,7 @@ export function BundlesView({ showToast }: ViewProps) {
       setSelected((s) => s.filter((x) => x !== pid));
       setPins((p) => { const { [pid]: _drop, ...rest } = p; return rest; });
     } else {
-      setSelected((s) => [...s, pid]);
+      setSelected((s) => (followSettings ? placeInOrder(s, pid) : [...s, pid]));
       setPins((p) => ({ ...p, [pid]: null }));
       loadUnits(pid);
     }
@@ -408,7 +448,16 @@ export function BundlesView({ showToast }: ViewProps) {
         <div className="col-span-12 lg:col-span-5">
           <div className="sticky-aside">
             <div className="card card-pad">
-              <div className="section-h"><div><h3>สรุปชุดสินค้า</h3><div className="muted section-sub">{selected.length} ชิ้นในชุด</div></div></div>
+              <div className="section-h">
+                <div><h3>สรุปชุดสินค้า</h3><div className="muted section-sub">{selected.length} ชิ้นในชุด · ลากหรือกด ↑↓ เพื่อจัดลำดับเอง</div></div>
+                <div className="spacer" />
+                {isOwner && <button type="button" className="btn btn-sm" title="ตั้งลำดับหมวดที่ใช้เรียงชิ้นส่วนในทุกชุด" onClick={goToOrderSettings}><Icons.settings /> ตั้งค่าลำดับ</button>}
+              </div>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', margin: '0 0 8px', fontSize: 12.5 }}>
+                <input type="checkbox" checked={followSettings} onChange={(e) => toggleFollowSettings(e.target.checked)} />
+                <span>เรียงตามตั้งค่าอัตโนมัติ</span>
+                {!followSettings && <span className="muted">(จัดลำดับเองอยู่)</span>}
+              </label>
               {selected.length === 0 ? (
                 <div className="empty-block">
                   <Icons.layers style={{ width: 28, height: 28, margin: '0 auto 8px', display: 'block', color: 'var(--ink-4)' }} />
@@ -416,17 +465,27 @@ export function BundlesView({ showToast }: ViewProps) {
                   <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>เลือกจากรายการด้านซ้าย</div>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
-                  {[...selected]
-                    .sort((a, z) => buildRank(productById.get(a)?.category_slug) - buildRank(productById.get(z)?.category_slug)
-                      || (productById.get(a)?.name ?? '').localeCompare(productById.get(z)?.name ?? ''))
-                    .map((id) => {
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto' }}>
+                  {selected.map((id, idx) => {
                     const p = productById.get(id);
                     if (!p) return null;
                     const units = unitMap[id];
                     const pin = pins[id] ?? null;
                     return (
-                      <div key={id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0' }}>
+                      <div
+                        key={id}
+                        draggable
+                        onDragStart={(e) => { setDragIdx(idx); e.dataTransfer.effectAllowed = 'move'; }}
+                        onDragOver={(e) => { if (dragIdx != null) e.preventDefault(); }}
+                        onDrop={(e) => { e.preventDefault(); if (dragIdx != null) movePart(dragIdx, idx); setDragIdx(null); }}
+                        onDragEnd={() => setDragIdx(null)}
+                        style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', opacity: dragIdx === idx ? 0.4 : 1 }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          <span title="ลากเพื่อย้าย" style={{ cursor: 'grab', color: 'var(--ink-4)', fontSize: 14, lineHeight: 1, userSelect: 'none' }}>⠿</span>
+                          <button type="button" className="btn btn-sm btn-icon btn-ghost" title="เลื่อนขึ้น" aria-label="เลื่อนขึ้น" disabled={idx === 0} onClick={() => movePart(idx, idx - 1)}><Icons.arrowUp /></button>
+                          <button type="button" className="btn btn-sm btn-icon btn-ghost" title="เลื่อนลง" aria-label="เลื่อนลง" disabled={idx === selected.length - 1} onClick={() => movePart(idx, idx + 1)}><Icons.arrowDown /></button>
+                        </div>
                         <Thumb url={pinnedUnit(id)?.image_url ?? p.image_url} />
                         <div style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>
                           <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>

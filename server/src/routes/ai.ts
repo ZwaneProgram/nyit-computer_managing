@@ -10,7 +10,6 @@ import { renderHtmlToPng } from '../lib/renderHtmlToPng';
 import { buildBundlePosterHtml, type PosterSpecRow } from '../lib/bundlePosterTemplate';
 import { AI_IMAGE_GEN_ENABLED, FEATURE_DISABLED } from '../lib/features';
 import { bundlePrice } from '../lib/bundlePrice';
-import { buildRank } from '../lib/buildOrder';
 
 const AI_IMAGE_DIR = fileURLToPath(new URL('../../uploads/ai-images', import.meta.url));
 
@@ -654,7 +653,7 @@ ${fieldList}
     );
     if (!bundleRows[0]) return reply.code(404).send({ error: 'ไม่พบชุดสินค้านี้' });
 
-    // Components → spec rows, in PC-build order (see lib/buildOrder).
+    // Components → spec rows, in the order the shop arranged the bundle.
     const { rows: comps } = await query<{ name: string; model: string | null; slug: string | null; price: number }>(
       `select p.name, p.model, c.slug,
               coalesce(min(s.price) filter (where s.status = 'in_stock'), 0) as price
@@ -663,8 +662,8 @@ ${fieldList}
          left join categories c on c.id = p.category_id
          left join product_serials s on s.product_id = p.id
         where bi.bundle_id = $1
-        group by p.id, p.name, p.model, c.slug
-        order by p.name`,
+        group by bi.sort, p.id, p.name, p.model, c.slug
+        order by bi.sort, p.name`,
       [b.bundleId],
     );
     if (!comps.length) return reply.code(400).send({ error: 'ชุดนี้ยังไม่มีสินค้า' });
@@ -673,8 +672,6 @@ ${fieldList}
       cpu: 'CPU', mb: 'MAINBOARD', ram: 'RAM', ssd: 'STORAGE', psu: 'POWER SUPPLY', gpu: 'GPU', monitor: 'MONITOR',
     };
     const specs: PosterSpecRow[] = comps
-      .slice()
-      .sort((a, z) => buildRank(a.slug) - buildRank(z.slug))
       .map((c) => ({
         slug: c.slug ?? 'default',
         label: CAT_LABEL[c.slug ?? ''] ?? 'อุปกรณ์',
@@ -865,11 +862,11 @@ async function generateSetup(
     discountThb = num((rows[0] as Record<string, unknown>).discount_thb);
     assemblyFee = num((rows[0] as Record<string, unknown>).assembly_fee);
     const { rows: itemRows } = await query(
-      'select product_id from bundle_items where bundle_id = $1',
+      'select product_id from bundle_items where bundle_id = $1 order by sort',
       [b.bundleId],
     );
     const ids = itemRows.map((r) => Number((r as Record<string, unknown>).product_id));
-    components = (await fetchComponents(ids)).sort((a, z) => buildRank(a.category_slug) - buildRank(z.category_slug));
+    components = await fetchComponents(ids);
   } else {
     const ids = Array.isArray(b.productIds) ? b.productIds.map(Number).filter(Number.isFinite) : [];
     if (!ids.length) return { error: 'กรุณาเลือกสินค้าอย่างน้อยหนึ่งรายการ', code: 400 };

@@ -6,10 +6,13 @@ import {
   changePassword,
   createUser,
   deleteUser,
+  fetchBundlePartOrder,
   fetchSettings,
   fetchUsers,
+  saveBundlePartOrder,
   updateSettings,
   type Account,
+  type PartOrderCategory,
   type ShopSettings,
 } from '../data/settings';
 
@@ -35,6 +38,7 @@ export function SettingsView({ showToast }: ViewProps) {
       </div>
 
       {isOwner && <DefaultsCard showToast={showToast} fail={fail} />}
+      {isOwner && <PartOrderCard showToast={showToast} fail={fail} />}
       {isOwner && <PostFooterCard showToast={showToast} fail={fail} />}
       {isOwner && <FacebookCard showToast={showToast} fail={fail} />}
       <MyPasswordCard showToast={showToast} fail={fail} />
@@ -94,6 +98,80 @@ function DefaultsCard({ showToast, fail }: { showToast: (m: string) => void; fai
           <div>
             <button className="btn btn-primary" onClick={save} disabled={saving}>
               <Icons.check /> บันทึก
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Default order of parts in a bundle (owner only) ----------
+// New parts added to a bundle drop into this order; the bundle form's
+// "เรียงตามค่าเริ่มต้น" button re-sorts to it. Parts can still be moved by hand.
+function PartOrderCard({ showToast, fail }: { showToast: (m: string) => void; fail: FailFn }) {
+  const [cats, setCats] = useState<PartOrderCategory[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetchBundlePartOrder().then(setCats).catch((err) => fail(err, 'โหลดลำดับไม่สำเร็จ'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const move = (from: number, to: number) => setCats((cs) => {
+    if (!cs || to < 0 || to >= cs.length || from === to) return cs;
+    const next = [...cs];
+    const [c] = next.splice(from, 1);
+    next.splice(to, 0, c);
+    return next;
+  });
+
+  const save = async () => {
+    if (!cats) return;
+    setSaving(true);
+    try {
+      setCats(await saveBundlePartOrder(cats.map((c) => c.id)));
+      showToast('บันทึกลำดับแล้ว');
+    } catch (err) {
+      fail(err, 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card card-pad" style={{ maxWidth: 640 }}>
+      <div className="section-h"><div>
+        <h3>ลำดับชิ้นส่วนในชุดสินค้า</h3>
+        <div className="muted section-sub">ชุดที่ติ๊ก “เรียงตามตั้งค่าอัตโนมัติ” จะเรียงตามลำดับหมวดนี้ทันทีที่บันทึก · ชุดที่จัดลำดับเองจะไม่เปลี่ยน</div>
+      </div></div>
+      {!cats ? (
+        <div className="muted" style={{ padding: 12 }}>กำลังโหลด...</div>
+      ) : (
+        <div className="grid" style={{ gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {cats.map((c, i) => (
+              <div
+                key={c.id}
+                draggable
+                onDragStart={(e) => { setDragIdx(i); e.dataTransfer.effectAllowed = 'move'; }}
+                onDragOver={(e) => { if (dragIdx != null) e.preventDefault(); }}
+                onDrop={(e) => { e.preventDefault(); if (dragIdx != null) move(dragIdx, i); setDragIdx(null); }}
+                onDragEnd={() => setDragIdx(null)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--surface)', opacity: dragIdx === i ? 0.4 : 1 }}
+              >
+                <span title="ลากเพื่อย้าย" style={{ cursor: 'grab', color: 'var(--ink-4)', userSelect: 'none' }}>⠿</span>
+                <span className="num muted" style={{ width: 20, fontSize: 12 }}>{i + 1}</span>
+                <span style={{ flex: 1 }}>{c.name}</span>
+                <button type="button" className="btn btn-sm btn-icon btn-ghost" title="เลื่อนขึ้น" aria-label="เลื่อนขึ้น" disabled={i === 0} onClick={() => move(i, i - 1)}><Icons.arrowUp /></button>
+                <button type="button" className="btn btn-sm btn-icon btn-ghost" title="เลื่อนลง" aria-label="เลื่อนลง" disabled={i === cats.length - 1} onClick={() => move(i, i + 1)}><Icons.arrowDown /></button>
+              </div>
+            ))}
+          </div>
+          <div>
+            <button className="btn btn-primary" onClick={save} disabled={saving}>
+              <Icons.check /> บันทึกลำดับ
             </button>
           </div>
         </div>

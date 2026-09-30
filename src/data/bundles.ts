@@ -27,6 +27,8 @@ export interface Bundle {
   discount_thb: number;
   /** Flat baht assembly fee added to each set (after the discount). */
   assembly_fee: number;
+  /** true = parts arranged by hand; false = kept in the ตั้งค่าระบบ order. */
+  custom_order: boolean;
   /** 0 = shop warranty (30 days), >0 = months. Overridden by warranty_text when set. */
   warranty_months: number;
   /** Free-text warranty (e.g. "15 วัน"); null = use warranty_months. */
@@ -57,18 +59,14 @@ const num = (v: unknown): number => (v == null ? 0 : Number(v));
 export const bundlePrice = (listPrice: number, discountPct: number, discountThb: number, assemblyFee = 0): number =>
   Math.max(0, Math.round(listPrice * (1 - discountPct / 100)) - discountThb) + assemblyFee;
 
-/**
- * PC-build listing order by category slug: CPU, cooler, board, RAM, storage,
- * VGA, PSU, case, monitor; anything else after. Mirrors server/src/lib/buildOrder.ts.
- */
-export const BUILD_ORDER = ['cpu', 'cpu-cooler', 'mb', 'ram', 'ssd', 'gpu', 'psu', 'case', 'monitor'];
-export const buildRank = (slug: string | null | undefined): number => {
-  const i = BUILD_ORDER.indexOf(slug ?? '');
-  return i === -1 ? BUILD_ORDER.length : i;
-};
-
-/** A bundle's pricing extras — only one of the two discounts is non-zero. */
-export interface BundleDiscount { discount_pct: number; discount_thb: number; assembly_fee: number; }
+/** A bundle's saved options: pricing extras (only one discount non-zero) + part-order mode. */
+export interface BundleOptions {
+  discount_pct: number;
+  discount_thb: number;
+  assembly_fee: number;
+  /** true = parts arranged by hand; false = follow the order in ตั้งค่าระบบ. */
+  custom_order: boolean;
+}
 
 function normItem(r: Record<string, unknown>): BundleItem {
   return {
@@ -99,6 +97,7 @@ function normBundle(r: Record<string, unknown>): Bundle {
     discount_pct,
     discount_thb,
     assembly_fee,
+    custom_order: r.custom_order === true,
     warranty_months: num(r.warranty_months),
     warranty_text: (r.warranty_text as string) ?? null,
     images: Array.isArray(r.images) ? (r.images as string[]) : [],
@@ -126,11 +125,11 @@ export interface BundleImages {
 /** One component to save: a product with an optional pinned unit (null = auto). */
 export interface BundleComponent { product_id: number; serial_id: number | null; }
 
-export async function createBundle(name: string, discount: BundleDiscount, warranty_months: number, warranty_text: string | null, items: BundleComponent[], gallery: BundleImages): Promise<void> {
+export async function createBundle(name: string, discount: BundleOptions, warranty_months: number, warranty_text: string | null, items: BundleComponent[], gallery: BundleImages): Promise<void> {
   await http.post('/api/bundles', { name, ...discount, warranty_months, warranty_text, items, ...gallery });
 }
 
-export async function updateBundle(id: number, name: string, discount: BundleDiscount, warranty_months: number, warranty_text: string | null, items: BundleComponent[], gallery: BundleImages): Promise<void> {
+export async function updateBundle(id: number, name: string, discount: BundleOptions, warranty_months: number, warranty_text: string | null, items: BundleComponent[], gallery: BundleImages): Promise<void> {
   await http.put(`/api/bundles/${id}`, { name, ...discount, warranty_months, warranty_text, items, ...gallery });
 }
 

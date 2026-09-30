@@ -72,7 +72,7 @@ export default function App() {
       case 'inventory': return <InventoryView onNav={navigate} showToast={showToast} onEditProduct={editProduct} />;
       case 'add-product': return <AddProductView onNav={navigate} showToast={showToast} editId={editProductId} />;
       case 'categories': return <CategoriesView showToast={showToast} />;
-      case 'bundles': return <BundlesView showToast={showToast} />;
+      case 'bundles': return <BundlesView onNav={navigate} showToast={showToast} />;
       case 'sales': return <SalesView showToast={showToast} />;
       case 'analytics': return <AnalyticsView />;
       case 'generate-post': return <GeneratePostView showToast={showToast} />;

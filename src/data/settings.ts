@@ -74,6 +74,22 @@ export async function updateSettings(input: ShopSettings): Promise<ShopSettings>
   return normSettings(s);
 }
 
+// ----- Bundle part order -----
+/** One category in the default order of parts inside a bundle. */
+export interface PartOrderCategory { id: number; name: string; slug: string; }
+
+/** Every category, in the order new parts are placed in a bundle. */
+export async function fetchBundlePartOrder(): Promise<PartOrderCategory[]> {
+  const { categories } = await http.get<{ categories: PartOrderCategory[] }>('/api/settings/bundle-part-order');
+  return categories;
+}
+
+/** Owner only: save the category order (ids, first = top of the bundle). */
+export async function saveBundlePartOrder(categoryIds: number[]): Promise<PartOrderCategory[]> {
+  const { categories } = await http.put<{ categories: PartOrderCategory[] }>('/api/settings/bundle-part-order', { category_ids: categoryIds });
+  return categories;
+}
+
 // ----- Accounts -----
 export async function fetchUsers(): Promise<Account[]> {
   const { users } = await http.get<{ users: Record<string, unknown>[] }>('/api/users');

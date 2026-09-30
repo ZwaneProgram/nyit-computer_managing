@@ -117,21 +117,3 @@ test('existing bundles migrate with a zero baht discount', async () => {
   const { rows } = await sql('select discount_thb::float t from bundles');
   assert.equal(rows[0].t, 0);
 });
-
-test('bundle components come back in PC-build order (CPU, board, RAM, SSD, VGA, PSU, case), not A–Z', async () => {
-  const slugs = ['psu', 'gpu', 'ssd', 'ram', 'mb', 'cpu'];
-  // Names are A–Z in the reverse of build order, so alphabetical sorting would fail.
-  const names = ['A-PSU', 'B-VGA', 'C-SSD', 'D-RAM', 'E-BOARD', 'F-CPU'];
-  await db.exec(`truncate products restart identity cascade;
-    insert into categories (name, slug, sort) values ('เคส', 'case', 9) on conflict (slug) do nothing;`);
-  for (let i = 0; i < names.length; i++) {
-    await sql(`insert into products (name, category_id) select $1, id from categories where slug = $2`, [names[i], slugs[i]]);
-  }
-  await sql(`insert into products (name, category_id) select 'AA-CASE', id from categories where slug = 'case'`);
-  await sql(`insert into products (name) values ('AAA-FAN')`);
-  const res = await app.inject({ method: 'POST', url: '/api/bundles', cookies,
-    payload: { name: 'PC', items: [1, 2, 3, 4, 5, 6, 7, 8].map((product_id) => ({ product_id })) } });
-  assert.equal(res.statusCode, 201, res.body);
-  const list = (await app.inject({ method: 'GET', url: '/api/bundles', cookies })).json().bundles;
-  assert.deepEqual(list[0].items.map((i: any) => i.name), ['F-CPU', 'E-BOARD', 'D-RAM', 'C-SSD', 'B-VGA', 'A-PSU', 'AA-CASE', 'AAA-FAN']);
-});

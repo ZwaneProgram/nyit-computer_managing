@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { query } from '../db';
 import { requireAuth, requireOwner } from '../auth';
+import { orderCategories, resortFollowingBundles, type OrderedCategory } from '../lib/buildOrder';
 
 // Shop settings are a singleton row (id = 1, created in schema.sql). Any
 // logged-in user may read them (shop name etc. is shown around the app); only
@@ -43,5 +44,24 @@ export async function settingsRoutes(app: FastifyInstance) {
       ],
     );
     return { settings: rows[0] };
+  });
+
+  // Default order of parts inside a bundle, as an ordered category list. Any
+  // logged-in user reads it (the bundle form places new parts by it); only the
+  // owner changes it.
+  const partOrder = async () => {
+    const { rows: cats } = await query<OrderedCategory>('select id, name, slug from categories');
+    const { rows } = await query('select bundle_part_order from shop_settings where id = 1');
+    return { categories: orderCategories(cats, rows[0]?.bundle_part_order) };
+  };
+
+  app.get('/api/settings/bundle-part-order', { preHandler: requireAuth() }, partOrder);
+
+  app.put('/api/settings/bundle-part-order', { preHandler: requireOwner() }, async (req) => {
+    const ids = (req.body as { category_ids?: unknown })?.category_ids;
+    const clean = Array.isArray(ids) ? ids.map(Number).filter(Number.isFinite) : [];
+    await query('update shop_settings set bundle_part_order = $1::jsonb where id = 1', [JSON.stringify(clean)]);
+    await resortFollowingBundles({ query }); // bundles that follow the setting pick up the new order
+    return partOrder();
   });
 }

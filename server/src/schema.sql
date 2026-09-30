@@ -281,6 +281,34 @@ alter table bundles add column if not exists discount_thb numeric(12,2) not null
 -- discount (labour — no cost, so it is all profit). Idempotent.
 alter table bundles add column if not exists assembly_fee numeric(12,2) not null default 0;
 
+-- Bundle part order (added 2026-09-30): the shop arranges a bundle's parts by
+-- hand (drag / ↑↓); `sort` is their position. Existing bundles are numbered in
+-- PC-build order (same list as server/src/lib/buildOrder.ts) so they look the
+-- same as before. Idempotent: only rows with no position yet are numbered.
+alter table bundle_items add column if not exists sort int;
+update bundle_items bi
+   set sort = r.rn
+  from (
+    select bi2.bundle_id, bi2.product_id,
+           row_number() over (
+             partition by bi2.bundle_id
+             order by coalesce(array_position(array['cpu','cpu-cooler','mb','ram','ssd','gpu','psu','case','monitor']::text[], c.slug), 10), p.name
+           ) - 1 as rn
+      from bundle_items bi2
+      join products p on p.id = bi2.product_id
+      left join categories c on c.id = p.category_id
+  ) r
+ where bi.sort is null and bi.bundle_id = r.bundle_id and bi.product_id = r.product_id;
+alter table bundle_items alter column sort set default 0;
+alter table bundle_items alter column sort set not null;
+
+-- Default part order for bundles (added 2026-09-30): category ids in the order
+-- the owner set in ตั้งค่าระบบ; new parts are placed by it. null = PC-build order.
+alter table shop_settings add column if not exists bundle_part_order jsonb;
+-- false = the bundle follows that settings order (re-sorted when it changes);
+-- true = someone arranged its parts by hand, so its own `sort` is kept.
+alter table bundles add column if not exists custom_order boolean not null default false;
+
 -- AI image library (added 2026-07-15): every image produced by
 -- POST /api/ai/generate-product-image is recorded here, keyed to the product it
 -- was generated for, so it can be picked later when managing a unit's gallery.
