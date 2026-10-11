@@ -354,30 +354,30 @@ export function SalesView({ showToast }: ViewProps) {
               <table className="tbl tbl-cards">
                 <thead>
                   <tr>
-                    <th>เลขที่บิล</th><th>วันที่</th><th>รายการ</th><th>ลูกค้า</th><th>พนักงาน</th>
+                    <th>เลขที่บิล</th><th>วันที่</th><th>รายการ</th><th>ลูกค้า</th><th className="col-hide-mid">พนักงาน</th>
                     <th style={{ textAlign: 'right' }}>ยอดรวม</th><th style={{ textAlign: 'right' }}>กำไร</th>
-                    <th>จัดการ</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
                   {history.map((t) => (
                     <tr key={t.id}>
                       <td className="mono cell-primary" style={{ fontSize: 12 }}>#{t.id}</td>
-                      <td data-label="วันที่"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(t.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}</span></td>
-                      <td data-label="รายการ">
+                      <td className="nowrap" data-label="วันที่"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(t.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}</span></td>
+                      <td className="col-name" data-label="รายการ">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           {t.kind === 'bundle' ? <span className="chip chip-accent">ชุด</span> : <span className="chip">ชิ้น</span>}
                           <span>{t.label}</span>
                         </div>
                       </td>
                       <td data-label="ลูกค้า">{t.customer_name || '—'}</td>
-                      <td data-label="พนักงาน"><span className="muted">{t.staff_name || t.staff_username || '—'}</span></td>
+                      <td className="col-hide-mid" data-label="พนักงาน"><span className="muted">{t.staff_name || t.staff_username || '—'}</span></td>
                       <td className="num" data-label="ยอดรวม" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(t.total, { maximumFractionDigits: 2 })}</td>
                       <td className="num" data-label="กำไร" style={{ textAlign: 'right', color: t.profit < 0 ? 'var(--neg)' : 'var(--pos)' }}>{fmtTHB(t.profit, { maximumFractionDigits: 2 })}</td>
-                      <td className="cell-actions" data-label="จัดการ">
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn btn-sm" disabled={historyAction !== null} aria-label={`แก้ไขบิล #${t.id}`} onClick={() => openSale(t.id)}><Icons.edit /> แก้ไข</button>
-                          <button className="btn btn-sm btn-ghost" disabled={historyAction !== null} aria-label={`ลบบิล #${t.id}`} onClick={() => removeSale(t.id)}><Icons.trash /> ลบ</button>
+                      <td className="cell-actions" data-label="จัดการ" style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', gap: 4 }}>
+                          <button className="btn btn-sm btn-icon btn-ghost" title="แก้ไขบิล" disabled={historyAction !== null} aria-label={`แก้ไขบิล #${t.id}`} onClick={() => openSale(t.id)}><Icons.edit /></button>
+                          <button className="btn btn-sm btn-icon btn-ghost" title="ลบบิล" disabled={historyAction !== null} aria-label={`ลบบิล #${t.id}`} onClick={() => removeSale(t.id)}><Icons.trash /></button>
                         </div>
                         {historyAction === t.id && <span className="muted" role="status">กำลังโหลด...</span>}
                       </td>

@@ -223,7 +223,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
             <thead>
               <tr>
                 <SortHd k="name">สินค้า</SortHd>
-                <th>หมวด</th>
+                <th className="col-hide-mid">หมวด</th>
                 <SortHd k="stock" right>คงเหลือ</SortHd>
                 <SortHd k="cost" right>ราคาทุน</SortHd>
                 <SortHd k="price" right>ราคาขาย</SortHd>
@@ -235,21 +235,21 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
             <tbody>
               {pageItems.map((p) => (
                 <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => setDetailId(p.id)}>
-                  <td className="cell-primary">
+                  <td className="cell-primary col-name">
                     <div>
                       <div className="product-cell-name">
                         {p.name}
                         {p.draft_count > 0 && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>แบบร่าง {p.draft_count}</span>}
                         {(dateFrom || dateTo) && <span className="chip chip-accent" style={{ marginLeft: 6, fontSize: 10 }}>ซื้อ {p.added_in_range} เครื่องในช่วงนี้</span>}
                       </div>
-                      <div className="product-cell-meta">{p.model || '—'}</div>
+                      <div className="product-cell-meta">{p.model || '—'}<span className="meta-cat"> · {p.category_name || '—'}</span></div>
                     </div>
                   </td>
-                  <td data-label="หมวด"><span className="muted" style={{ fontSize: 12.5 }}>{p.category_name || '—'}</span></td>
+                  <td className="col-hide-mid" data-label="หมวด"><span className="muted" style={{ fontSize: 12.5 }}>{p.category_name || '—'}</span></td>
                   <td className="num" data-label="คงเหลือ" style={{ textAlign: 'right' }}>{p.stock}</td>
                   <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{costLabel(p)}</td>
                   <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{priceLabel(p)}</td>
-                  <td data-label="วันที่ซื้อ">
+                  <td className="nowrap" data-label="วันที่ซื้อ">
                     <span className="muted" style={{ fontSize: 12.5 }}>{fmtPurchaseDate(p.purchased_last)}</span>
                     {p.purchase_dates > 1 && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }} title="เครื่องในสต๊อกซื้อคนละวัน — กดดูรายละเอียด">+{p.purchase_dates - 1}</span>}
                   </td>
@@ -445,8 +445,8 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12">
-        <div className="col-span-12 lg:col-span-4">
+      <div className="grid grid-cols-1 xl:grid-cols-12">
+        <div className="col-span-12 xl:col-span-4">
           <div className="card card-pad">
             <div className="summary-box">
               <div className="summary-row"><span className="muted">รุ่น</span><span>{product.model || '—'}</span></div>
@@ -458,7 +458,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
           </div>
         </div>
 
-        <div className="col-span-12 lg:col-span-8">
+        <div className="col-span-12 xl:col-span-8">
           <div className="card card-pad">
             <div className="section-h">
               <div><h3>เครื่องในสต๊อก ({inStock})</h3><div className="muted section-sub">แต่ละเครื่องมีราคา/รับประกัน/รูปของตัวเอง · รวม {serials.length} รายการ{draftCount > 0 ? ` · แบบร่าง ${draftCount}` : ''}</div></div>
@@ -508,7 +508,7 @@ function ProductDetail({ id, onBack, onDeleted, onEdit, showToast }: DetailProps
                         <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{fmtTHB(s.cost)}</td>
                         <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{fmtTHB(s.price)}</td>
                         <td data-label="รับประกัน"><span className="muted" style={{ fontSize: 12.5 }}>{warrantyDisplay(s.warranty_months, s.warranty_text)}</span></td>
-                        <td data-label="วันที่ซื้อ"><span className="muted" style={{ fontSize: 12.5 }}>{fmtPurchaseDate(s.purchased_at)}</span></td>
+                        <td className="nowrap" data-label="วันที่ซื้อ"><span className="muted" style={{ fontSize: 12.5 }}>{fmtPurchaseDate(s.purchased_at)}</span></td>
                         <td data-label="สถานะ">{serialStatusChip(s.status)}</td>
                         <td className="cell-actions">
                           <div style={{ display: 'inline-flex', gap: 4 }}>
