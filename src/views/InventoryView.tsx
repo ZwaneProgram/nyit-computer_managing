@@ -30,7 +30,7 @@ interface ViewProps {
   onEditProduct: (id: number) => void;
 }
 
-type SortKey = 'name' | 'stock' | 'cost' | 'price' | 'created';
+type SortKey = 'name' | 'stock' | 'cost' | 'price' | 'purchased';
 type StockFilter = 'all' | 'in' | 'out';
 
 /** Price range label for a catalog's in-stock units. */
@@ -61,7 +61,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
   const [preview, setPreview] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'created', dir: 'desc' });
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'purchased', dir: 'desc' });
   const [page, setPage] = useState(1);
   const perPage = 10;
 
@@ -102,7 +102,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
         : sort.key === 'stock' ? p.stock
         : sort.key === 'cost' ? (p.cost_min ?? 0)
         : sort.key === 'price' ? (p.price_min ?? 0)
-        : Date.parse(p.created_at);
+        : (p.purchased_last ?? '');
     arr.sort((a, b) => {
       const va = sortVal(a); const vb = sortVal(b);
       const cmp = typeof va === 'string'
@@ -227,7 +227,7 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                 <SortHd k="stock" right>คงเหลือ</SortHd>
                 <SortHd k="cost" right>ราคาทุน</SortHd>
                 <SortHd k="price" right>ราคาขาย</SortHd>
-                <SortHd k="created">เพิ่มเมื่อ</SortHd>
+                <SortHd k="purchased">วันที่ซื้อ</SortHd>
                 <th>สถานะ</th>
                 <th style={{ width: 124 }} />
               </tr>
@@ -249,7 +249,10 @@ export function InventoryView({ onNav, showToast, onEditProduct }: ViewProps) {
                   <td className="num" data-label="คงเหลือ" style={{ textAlign: 'right' }}>{p.stock}</td>
                   <td className="num muted" data-label="ราคาทุน" style={{ textAlign: 'right' }}>{costLabel(p)}</td>
                   <td className="num" data-label="ราคาขาย" style={{ textAlign: 'right', fontWeight: 600 }}>{priceLabel(p)}</td>
-                  <td data-label="เพิ่มเมื่อ"><span className="muted" style={{ fontSize: 12.5 }}>{new Date(p.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}</span></td>
+                  <td data-label="วันที่ซื้อ">
+                    <span className="muted" style={{ fontSize: 12.5 }}>{fmtPurchaseDate(p.purchased_last)}</span>
+                    {p.purchase_dates > 1 && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }} title="เครื่องในสต๊อกซื้อคนละวัน — กดดูรายละเอียด">+{p.purchase_dates - 1}</span>}
+                  </td>
                   <td data-label="สถานะ">{statusChip(p)}</td>
                   <td className="cell-actions" style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>

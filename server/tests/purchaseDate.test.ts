@@ -99,3 +99,23 @@ test('migration backfills purchase date from the Bangkok entry date and is re-ru
   const { rows } = await sql(`select to_char(purchased_at, 'YYYY-MM-DD') as d from product_serials where serial = 'OLD-1'`);
   assert.equal(rows[0].d, '2026-05-01');
 });
+
+test('the product list shows the newest in-stock purchase date and how many other dates exist', async () => {
+  await addUnit(1, { serial: 'GPU-1', purchased_at: '2026-01-10' });
+  await addUnit(1, { serial: 'GPU-2', purchased_at: '2026-01-20' });
+  await addUnit(1, { serial: 'GPU-3', purchased_at: '2026-01-20' });
+  await addUnit(1, { serial: 'GPU-4', purchased_at: '2026-02-01' });
+  // The newest unit is sold, so it no longer counts.
+  await sql(`update product_serials set status = 'sold' where serial = 'GPU-4'`);
+  // CPU is sold out: falls back to its newest purchase overall.
+  await addUnit(2, { serial: 'CPU-1', purchased_at: '2026-03-05' });
+  await sql(`update product_serials set status = 'sold' where serial = 'CPU-1'`);
+
+  const res = await app.inject({ method: 'GET', url: '/api/products', cookies });
+  assert.equal(res.statusCode, 200, res.body);
+  const byName = Object.fromEntries(res.json().products.map((p: any) => [p.name, p]));
+  assert.equal(byName.GPU.purchased_last, '2026-01-20');
+  assert.equal(byName.GPU.purchase_dates, 2);
+  assert.equal(byName.CPU.purchased_last, '2026-03-05');
+  assert.equal(byName.CPU.purchase_dates, 0);
+});

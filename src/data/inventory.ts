@@ -63,6 +63,10 @@ export interface Product {
   stock_cost: number;
   /** Photo of the cheapest in-stock unit that has one (null when none). */
   image_url: string | null;
+  /** Newest purchase date (YYYY-MM-DD) of in-stock units; sold out → newest of any unit. */
+  purchased_last: string | null;
+  /** How many distinct purchase dates the in-stock units have. */
+  purchase_dates: number;
   created_at: string;
   updated_at: string;
 }
@@ -124,6 +128,8 @@ function normProduct(r: Record<string, unknown>): Product {
     cost_max: r.cost_max == null ? null : n(r.cost_max),
     stock_cost: n(r.stock_cost),
     image_url: (r.image_url as string) ?? null,
+    purchased_last: (r.purchased_last as string) ?? null,
+    purchase_dates: n(r.purchase_dates),
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
   };

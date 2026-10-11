@@ -173,7 +173,11 @@ export async function productRoutes(app: FastifyInstance) {
               coalesce(s.in_stock, 0)::int as stock,
               coalesce(s.draft_count, 0)::int as draft_count,
               s.price_min, s.price_max, s.cost_min, s.cost_max, coalesce(s.stock_cost, 0) as stock_cost,
-              coalesce(s.added_in_range, 0)::int as added_in_range
+              coalesce(s.added_in_range, 0)::int as added_in_range,
+              -- Newest purchase date of in-stock units (sold out → newest of any unit),
+              -- plus how many distinct dates the in-stock units have.
+              to_char(coalesce(s.bought_last_in_stock, s.bought_last), 'YYYY-MM-DD') as purchased_last,
+              coalesce(s.purchase_dates, 0)::int as purchase_dates
          from products p
          left join categories c on c.id = p.category_id
          left join (
@@ -188,7 +192,10 @@ export async function productRoutes(app: FastifyInstance) {
                   count(*) filter (where
                     ($2::date is null or purchased_at >= $2::date) and
                     ($3::date is null or purchased_at <= $3::date)
-                  ) as added_in_range
+                  ) as added_in_range,
+                  max(purchased_at) filter (where status = 'in_stock') as bought_last_in_stock,
+                  max(purchased_at) as bought_last,
+                  count(distinct purchased_at) filter (where status = 'in_stock') as purchase_dates
              from product_serials group by product_id
          ) s on s.product_id = p.id
          -- Representative photo: the cheapest in-stock unit that has one.
